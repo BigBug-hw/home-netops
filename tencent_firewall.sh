@@ -70,7 +70,7 @@ main() {
     local current_ip cidr resp matched exact_count stale_count changed
     changed=0
     current_ip="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')" || die "failed to get public IPv4"
-    cidr="${current_ip}/32"
+    cidr="${current_ip}"
 
     log "syncing Tencent firewall rule desc=$TENCENT_FIREWALL_RULE_DESC cidr=$cidr"
 
