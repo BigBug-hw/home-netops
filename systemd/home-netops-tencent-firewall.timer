@@ -1,12 +1,12 @@
 [Unit]
-Description=Run Aliyun DDNS update periodically
+Description=Run home-netops Tencent firewall update periodically
 
 [Timer]
 OnBootSec=30s
 OnUnitActiveSec=10min
 AccuracySec=30s
 Persistent=true
-Unit=aliyun-ddns.service
+Unit=home-netops-tencent-firewall.service
 
 [Install]
 WantedBy=timers.target

@@ -1,162 +1,127 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-########################################
-# 配置区：按你的实际情况修改
-########################################
-INSTANCE_ID="lhins-33uux3hm"
-REGION="ap-beijing"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/home-netops-lib.sh"
 
-GET_IP_SCRIPT="./get_public_ip.sh"
+load_config
 
-# 要放行的端口：你的场景是登录云主机 SSH
-PROTOCOL="TCP"
-PORT="22"
-ACTION="ACCEPT"
-
-# 用 description 标识本脚本维护的规则
-# 注意腾讯云限制 FirewallRuleDescription 最长 64 字符
-RULE_DESC="auto-wsl-home-ssh"
-
-# tccli 路径
-TCCLI_BIN="./.venv/bin/tccli"
-
-########################################
-
-log() {
-    echo "[$(date '+%F %T')] $*"
-}
-
-die() {
-    echo "[$(date '+%F %T')] ERROR: $*" >&2
-    exit 1
-}
-
-need_cmd() {
-    command -v "$1" >/dev/null 2>&1 || die "command not found: $1"
-}
-
-need_cmd "$TCCLI_BIN"
-need_cmd jq
-
-[[ -x "$GET_IP_SCRIPT" ]] || die "GET_IP_SCRIPT not executable: $GET_IP_SCRIPT"
-
-CURRENT_IP="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')"
-
-[[ "$CURRENT_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "invalid public IP: $CURRENT_IP"
-
-CIDR="${CURRENT_IP}/32"
-
-log "current public IP: $CURRENT_IP"
-log "target rule: ${PROTOCOL} ${PORT} ${CIDR} ${ACTION} desc=${RULE_DESC}"
+TENCENT_INSTANCE_ID="${TENCENT_INSTANCE_ID:-lhins-33uux3hm}"
+TENCENT_REGION="${TENCENT_REGION:-ap-beijing}"
+TENCENT_FIREWALL_PROTOCOL="${TENCENT_FIREWALL_PROTOCOL:-TCP}"
+TENCENT_FIREWALL_PORT="${TENCENT_FIREWALL_PORT:-22}"
+TENCENT_FIREWALL_ACTION="${TENCENT_FIREWALL_ACTION:-ACCEPT}"
+TENCENT_FIREWALL_RULE_DESC="${TENCENT_FIREWALL_RULE_DESC:-auto-wsl-home-ssh}"
+TCCLI_BIN="${TCCLI_BIN:-tccli}"
+GET_IP_SCRIPT="${GET_IP_SCRIPT:-$SCRIPT_DIR/get_public_ip.sh}"
 
 describe_rules() {
     "$TCCLI_BIN" lighthouse DescribeFirewallRules \
-        --region "$REGION" \
-        --InstanceId "$INSTANCE_ID" \
-        --Limit 100 \
-        --output json
+        --region "$TENCENT_REGION" \
+        --InstanceId "$TENCENT_INSTANCE_ID"
 }
 
-firewall_rules() {
+build_rule_json() {
+    local cidr="$1"
+
     jq -nc \
-      --arg proto "$PROTOCOL" \
-      --arg port "$PORT" \
-      --arg cidr "$cidr" \
-      --arg desc "$RULE_DESC" \
-      '[
-        {
+        --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
+        --arg port "$TENCENT_FIREWALL_PORT" \
+        --arg cidr "$cidr" \
+        --arg action "$TENCENT_FIREWALL_ACTION" \
+        --arg desc "$TENCENT_FIREWALL_RULE_DESC" \
+        '[{
           Protocol: $proto,
           Port: $port,
           CidrBlock: $cidr,
-          Action: "ACCEPT",
+          Action: $action,
           FirewallRuleDescription: $desc
-        }
-      ]'
+        }]'
 }
 
 create_rule() {
     local cidr="$1"
-    local rule_json="$(firewall_rules)"
-
-    log "creating firewall rule: ${PROTOCOL} ${PORT} ${cidr}"
+    local rule_json
+    rule_json="$(build_rule_json "$cidr")"
 
     "$TCCLI_BIN" lighthouse CreateFirewallRules \
-        --region "$REGION" \
-        --InstanceId "$INSTANCE_ID" \
-        --FirewallRules "$rule_json" \
-        >/dev/null
+        --region "$TENCENT_REGION" \
+        --InstanceId "$TENCENT_INSTANCE_ID" \
+        --FirewallRules "$rule_json"
 }
 
-delete_rule() {
-    local proto="$1"
-    local port="$2"
-    local cidr="$3"
-    local action="$4"
-    local desc="$5"
-    local rule_json="$(firewall_rules)"
-
-    log "deleting stale rule: ${proto} ${port} ${cidr} ${action} desc=${desc}"
+delete_rule_json() {
+    local rule="$1"
+    local rule_json
+    rule_json="$(jq -nc --argjson rule "$rule" '[$rule]')"
 
     "$TCCLI_BIN" lighthouse DeleteFirewallRules \
-        --region "$REGION" \
-        --InstanceId "$INSTANCE_ID" \
-        --FirewallRules "$rule_json" \
-        >/dev/null
+        --region "$TENCENT_REGION" \
+        --InstanceId "$TENCENT_INSTANCE_ID" \
+        --FirewallRules "$rule_json"
 }
 
-RESP="$(describe_rules)"
+main() {
+    need_cmd "$TCCLI_BIN"
+    need_cmd jq
+    [[ -x "$GET_IP_SCRIPT" ]] || die "GET_IP_SCRIPT not executable: $GET_IP_SCRIPT"
 
-# 找出本脚本维护的规则：通过 description 精确匹配
-MATCHED_RULES="$(
-    echo "$RESP" | jq -c \
-      --arg desc "$RULE_DESC" \
-      '.FirewallRuleSet[]? | select(.FirewallRuleDescription == $desc)'
-)"
+    local current_ip cidr resp matched exact_count stale_count changed
+    changed=0
+    current_ip="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')" || die "failed to get public IPv4"
+    cidr="${current_ip}/32"
 
-MATCH_COUNT="$(echo "$MATCHED_RULES" | sed '/^$/d' | wc -l | awk '{print $1}')"
+    log "syncing Tencent firewall rule desc=$TENCENT_FIREWALL_RULE_DESC cidr=$cidr"
 
-if [[ "$MATCH_COUNT" -eq 0 ]]; then
-    log "managed rule not found"
-    create_rule "$CIDR"
-    log "done"
-    exit 0
-fi
+    resp="$(describe_rules)" || die "failed to describe Tencent firewall rules"
+    matched="$(jq -c \
+        --arg desc "$TENCENT_FIREWALL_RULE_DESC" \
+        '.FirewallRuleSet[]? | select(.FirewallRuleDescription == $desc)' \
+        <<< "$resp")"
 
-# 如果存在多条相同 description 的规则，只保留/重建为一条，避免历史垃圾规则堆积
-NEED_CREATE=0
-FOUND_EXACT=0
+    exact_count="$(jq -s \
+        --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
+        --arg port "$TENCENT_FIREWALL_PORT" \
+        --arg cidr "$cidr" \
+        --arg action "$TENCENT_FIREWALL_ACTION" \
+        'map(select(.Protocol == $proto and .Port == $port and .CidrBlock == $cidr and .Action == $action)) | length' \
+        <<< "$matched")"
 
-while IFS= read -r rule; do
-    [[ -n "$rule" ]] || continue
+    stale_count="$(jq -s \
+        --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
+        --arg port "$TENCENT_FIREWALL_PORT" \
+        --arg cidr "$cidr" \
+        --arg action "$TENCENT_FIREWALL_ACTION" \
+        'map(select(.Protocol == $proto and .Port == $port and .Action == $action and .CidrBlock != $cidr)) | length' \
+        <<< "$matched")"
 
-    proto="$(echo "$rule" | jq -r '.Protocol')"
-    port="$(echo "$rule" | jq -r '.Port')"
-    cidr="$(echo "$rule" | jq -r '.CidrBlock')"
-    action="$(echo "$rule" | jq -r '.Action')"
-    desc="$(echo "$rule" | jq -r '.FirewallRuleDescription')"
-
-    if [[ "$proto" == "$PROTOCOL" && "$port" == "$PORT" && "$cidr" == "$CIDR" && "$action" == "$ACTION" ]]; then
-        if [[ "$FOUND_EXACT" -eq 0 ]]; then
-            FOUND_EXACT=1
-            log "firewall rule already up to date"
-        else
-            # 多余重复规则，删除
-            delete_rule "$proto" "$port" "$cidr" "$action" "$desc"
-        fi
-    else
-        # IP 或端口/协议不一致，删除旧规则
-        delete_rule "$proto" "$port" "$cidr" "$action" "$desc"
-        NEED_CREATE=1
+    if (( stale_count > 0 )); then
+        while IFS= read -r rule; do
+            [[ -n "$rule" ]] || continue
+            log "deleting stale Tencent firewall rule: $(jq -c . <<< "$rule")"
+            delete_rule_json "$rule"
+            changed=1
+        done < <(jq -c \
+            --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
+            --arg port "$TENCENT_FIREWALL_PORT" \
+            --arg cidr "$cidr" \
+            --arg action "$TENCENT_FIREWALL_ACTION" \
+            'select(.Protocol == $proto and .Port == $port and .Action == $action and .CidrBlock != $cidr)' \
+            <<< "$matched")
     fi
-done <<< "$MATCHED_RULES"
 
-if [[ "$FOUND_EXACT" -eq 0 ]]; then
-    NEED_CREATE=1
-fi
+    if (( exact_count > 0 )); then
+        log "firewall_changed=$changed"
+        log "no change: Tencent firewall already allows $cidr"
+        exit 0
+    fi
 
-if [[ "$NEED_CREATE" -eq 1 ]]; then
-    create_rule "$CIDR"
-fi
+    log "creating Tencent firewall rule for $cidr"
+    create_rule "$cidr"
+    changed=1
+    log "firewall_changed=$changed"
+    log "Tencent firewall update success"
+}
 
-log "done"
+main "$@"
