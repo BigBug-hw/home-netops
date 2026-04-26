@@ -88,7 +88,7 @@ main() {
         --Value "$public_ip" \
         --TTL "$ALIYUN_TTL" \
         --Line "$ALIYUN_LINE" \
-        --output json 2>&1)"; then
+        2>&1)"; then
         log "update success: ${subdomain} -> ${public_ip}"
     else
         printf '%s\n' "$output" >&2

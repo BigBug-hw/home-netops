@@ -15,7 +15,7 @@ ALIYUN_LINE="default"
 ALIYUN_TTL="600"
 
 # Tencent Lighthouse firewall rule used before reverse SSH connects.
-TCCLI_BIN="tccli"
+TCCLI_BIN="/usr/local/lib/home-netops/.venv/bin/tccli"
 TENCENT_INSTANCE_ID="lhins-33uux3hm"
 TENCENT_REGION="ap-beijing"
 TENCENT_FIREWALL_PROTOCOL="TCP"
