@@ -35,7 +35,7 @@ for script in "${scripts[@]}"; do
     bash -n "$ROOT/$script"
 done
 
-bash -n "$ROOT/home-netops.conf.example"
+bash -n "$ROOT/config/home-netops.conf.example"
 
 grep -q 'Requires=home-netops-tencent-firewall.service' "$ROOT/systemd/home-netops-reverse-ssh.service" \
     || fail "reverse SSH service must require firewall service"

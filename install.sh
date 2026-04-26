@@ -71,7 +71,7 @@ for script in "${scripts[@]}"; do
 done
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
-    install -m 0600 "$SCRIPT_DIR/home-netops.conf.example" "$CONFIG_FILE"
+    install -m 0600 "$SCRIPT_DIR/config/home-netops.conf.example" "$CONFIG_FILE"
     echo "created config: $CONFIG_FILE"
 else
     echo "kept existing config: $CONFIG_FILE"
