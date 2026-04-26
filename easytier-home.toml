@@ -1,0 +1,38 @@
+# vpn中的身份
+hostname = "home"
+instance_name = "home.net.bigbug.ren"
+
+# 静态IP
+dhcp = false
+ipv4 = "10.144.144.2"
+
+# 共享节点监听
+listeners = [
+    "tcp://0.0.0.0:11010",
+    "udp://0.0.0.0:11010",
+    "ws://0.0.0.0:11011",
+    "wss://0.0.0.0:11012",
+]
+tcp_whitelist = []
+udp_whitelist = []
+
+# 管理 RPC 监听地址；只本机管理更安全
+rpc_portal = "127.0.0.1:15888"
+rpc_portal_whitelist = ["127.0.0.1/32"]
+
+[network_identity]
+network_name = "net.bigbug.ren"
+network_secret = "gAYaYvQ96YajxsCK5umr9KnUkqBE-y7u0GKyzxSmNNE"
+
+[flags]
+need_p2p = true
+private_mode = true
+
+[secure_mode]
+enabled = true
+local_private_key = "YLJB1PboN/k7ybogDFRuZ3CtD9LMlKJ8VdXP5gc/0og="
+local_public_key = "dAqT+oDaXavlkzJMufAigrfjL4UVKe0NDg95zanFVC4="
+
+[[peer]]
+uri = "tcp://82.156.118.129:11010"
+peer_public_key = "2vLTYzBlMBr0X910w+LqGC0GHqRE30DjWybOGwMRC20="
