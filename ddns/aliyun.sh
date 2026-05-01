@@ -15,6 +15,7 @@ ALIYUN_TYPE="${ALIYUN_TYPE:-A}"
 ALIYUN_LINE="${ALIYUN_LINE:-default}"
 ALIYUN_TTL="${ALIYUN_TTL:-600}"
 GET_IP_SCRIPT="${GET_IP_SCRIPT:-$ROOT_DIR/lib/get-public-ip.sh}"
+GET_IP_SCRIPT="$(resolve_app_path "$GET_IP_SCRIPT")"
 ALIYUN_BIN="${ALIYUN_BIN:-aliyun}"
 
 build_subdomain() {

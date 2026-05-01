@@ -8,7 +8,8 @@ source "$SCRIPT_DIR/common.sh"
 load_config
 
 EASYTIER_LAN_IP="${EASYTIER_LAN_IP:-}"
-EASYTIER_CONFIG="${EASYTIER_CONFIG:-/etc/home-netops/easytier-home.yaml}"
+EASYTIER_CONFIG="${EASYTIER_CONFIG:-config/easytier-${HOME_NETOPS_ROLE}.yaml}"
+EASYTIER_CONFIG="$(resolve_app_path "$EASYTIER_CONFIG")"
 GOST_BIN="${GOST_BIN:-gost}"
 PROXY_SOCKS_PORT="${PROXY_SOCKS_PORT:-1080}"
 PROXY_HTTP_PORT="${PROXY_HTTP_PORT:-8080}"

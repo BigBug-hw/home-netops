@@ -1,0 +1,76 @@
+{
+  "shared": {
+    "PUBLIC_IP_URLS": "https://ip.3322.net https://ddns.oray.com/checkip https://myip.ipip.net",
+    "PUBLIC_IP_TIMEOUT": "8",
+    "PUBLIC_IP_NO_PROXY": "1"
+  },
+  "services": {
+    "ddns": {
+      "ALIYUN_BIN": "aliyun",
+      "ALIYUN_PROFILE": "ddns",
+      "ALIYUN_DOMAIN_NAME": "bigbug.ren",
+      "ALIYUN_RR": "home",
+      "ALIYUN_TYPE": "A",
+      "ALIYUN_LINE": "default",
+      "ALIYUN_TTL": "600"
+    },
+    "firewall": {
+      "TCCLI_BIN": "tccli",
+      "TENCENT_INSTANCE_ID": "lhins-33uux3hm",
+      "TENCENT_REGION": "ap-beijing",
+      "TENCENT_FIREWALL_PROTOCOL": "TCP",
+      "TENCENT_FIREWALL_PORT": "22",
+      "TENCENT_FIREWALL_ACTION": "ACCEPT",
+      "TENCENT_FIREWALL_RULE_DESC": "auto-wsl-home-ssh",
+      "RESTART_REVERSE_AFTER_FIREWALL_CHANGE": "1",
+      "SYSTEMCTL_BIN": "systemctl"
+    },
+    "reverse-ssh": {
+      "AUTOSSH_BIN": "autossh",
+      "CLOUD_HOST": "82.156.118.129",
+      "CLOUD_USER": "root",
+      "CLOUD_PORT": "22",
+      "REMOTE_BIND_ADDR": "127.0.0.1",
+      "REMOTE_BIND_PORT": "2222",
+      "LOCAL_TARGET_HOST": "127.0.0.1",
+      "LOCAL_TARGET_PORT": "22",
+      "IDENTITY_FILE": "",
+      "CHECK_LOCAL_SSHD": "1"
+    },
+    "easytier": {
+      "EASYTIER_BIN": "easytier-core"
+    },
+    "proxy-server": {
+      "GOST_BIN": "gost",
+      "EASYTIER_LAN_IP": "",
+      "PROXY_SOCKS_PORT": "1080",
+      "PROXY_HTTP_PORT": "8080"
+    }
+  },
+  "roles": {
+    "home": {
+      "services": ["ddns", "firewall", "reverse-ssh", "easytier"],
+      "overrides": {
+        "easytier": {
+          "EASYTIER_CONFIG": "config/easytier-home.yaml"
+        }
+      }
+    },
+    "ali": {
+      "services": ["easytier", "proxy-server"],
+      "overrides": {
+        "easytier": {
+          "EASYTIER_CONFIG": "config/easytier-ali.yaml"
+        }
+      }
+    },
+    "tencent": {
+      "services": ["easytier"],
+      "overrides": {
+        "easytier": {
+          "EASYTIER_CONFIG": "config/easytier-tencent.yaml"
+        }
+      }
+    }
+  }
+}

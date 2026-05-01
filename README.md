@@ -1,178 +1,152 @@
 # home-netops
 
-Personal network automation for a home machine:
+Personal network automation for three roles:
 
-- Aliyun DDNS keeps `home.bigbug.ren` pointed at the current public IPv4.
-- Tencent Lighthouse firewall keeps one SSH allow rule in sync with the current public IPv4.
-- Reverse SSH exposes the home SSH service through the cloud host after the firewall rule is ready.
-- EasyTier starts the configured VPN node after the firewall rule is ready.
-- Proxy server exposes SOCKS5 and HTTP proxy listeners on the EasyTier LAN.
+- `home`: Aliyun DDNS, Tencent firewall sync, reverse SSH, and EasyTier.
+- `ali`: EasyTier and a SOCKS5/HTTP proxy server on the EasyTier LAN.
+- `tencent`: EasyTier only.
+
+The repository directory is the application directory. Installation does not copy scripts or config into `/usr/local` or `/etc`; it only installs the selected role's systemd units.
 
 ## Layout
 
 ```text
+check.sh              Read-only dependency, config, and systemd status checks
+config/               JSON role config and EasyTier configs
 ddns/                 Aliyun DDNS update
 firewall/             Tencent Lighthouse firewall sync
-lib/                  Shared shell helpers, public IPv4 detection, EasyTier, reverse SSH, and proxy tools
-install.sh            Install scripts, config example, and systemd units
-uninstall.sh          Stop services and remove installed files
-systemd/              systemd service and timer units
-config/               Example config and EasyTier configs
+install.sh            Role-driven systemd unit installer
+lib/                  Shared helpers and service entrypoints
 tests/run.sh          Offline regression checks with command mocks
+uninstall.sh          Remove generated home-netops systemd units
 ```
-
-The installed script root is `/usr/local/lib/home-netops`. Runtime config lives at `/etc/home-netops/home-netops.conf`.
 
 ## Dependencies
 
-Install the tools used by the enabled features:
+Base tools:
 
 ```bash
-sudo apt install autossh curl jq iproute2
+sudo apt install curl jq
 ```
 
-Aliyun DDNS needs the Aliyun CLI configured with the profile in `ALIYUN_PROFILE`.
+Install the tools used by the enabled role:
+
+- `home`: `aliyun`, `tccli`, `autossh`, `easytier-core`, and `iproute2` for the optional local SSH port check.
+- `ali`: `easytier-core` and `gost`.
+- `tencent`: `easytier-core`.
+
+Aliyun DDNS needs the Aliyun CLI profile configured with `ALIYUN_PROFILE`.
 
 ```bash
-# Install and configure aliyun CLI according to Aliyun's current docs.
 aliyun configure --profile ddns
 ```
 
-Tencent firewall sync needs `tccli`. The default config expects it in the project venv under `/usr/local/lib/home-netops/.venv/bin/tccli`.
+Tencent firewall sync needs `tccli` authenticated for the configured Lighthouse instance.
 
 ```bash
-cd /usr/local/lib/home-netops
-uv venv
-uv pip install tccli
 tccli auth login --browser no
-```
-
-EasyTier needs `easytier-core` installed somewhere stable. Set `EASYTIER_BIN` and `EASYTIER_CONFIG` in `home-netops.conf`.
-
-The installer copies `config/easytier-*.yaml` into `/etc/home-netops/` without overwriting existing files. `home-netops-easytier.service` starts after `home-netops-tencent-firewall.service`.
-
-Proxy server needs EasyTier and `gost`. Install `gost` somewhere stable and set `GOST_BIN` in `home-netops.conf`. The proxy server binds to `EASYTIER_LAN_IP`; when that variable is empty, it reads the `ipv4` value from `EASYTIER_CONFIG`.
-
-Example `gost` install:
-
-```bash
-mkdir -p /home/bigbug/software/gost
-cd /home/bigbug/software/gost
-wget https://github.com/go-gost/gost/releases/download/v3.2.7-nightly.20260426/gost_3.2.7-nightly.20260426_linux_amd64v3.tar.gz
-tar zxvf gost_3.2.7-nightly.20260426_linux_amd64v3.tar.gz
-```
-
-## Install
-
-```bash
-sudo ./install.sh --services all
-```
-
-This copies scripts into `/usr/local/lib/home-netops`, creates `/etc/home-netops/home-netops.conf` if missing, installs systemd units, reloads systemd, and enables:
-
-- `home-netops-aliyun-ddns.timer`
-- `home-netops-tencent-firewall.timer`
-- `home-netops-reverse-ssh.service`
-- `home-netops-easytier.service`
-- `home-netops-proxy-server.service`
-
-Install without starting services:
-
-```bash
-sudo ./install.sh --services all --no-start
-```
-
-Install only selected services:
-
-```bash
-sudo ./install.sh --services ddns
-sudo ./install.sh --services firewall
-sudo ./install.sh --services firewall,reverse-ssh
-sudo ./install.sh --services firewall,easytier
-sudo ./install.sh --services firewall,easytier,server
-```
-
-Interactive install:
-
-```bash
-sudo ./install.sh --interactive
-```
-
-The interactive prompt has no default; pressing Enter without a service name fails.
-
-Available service names:
-
-- `ddns`: installs `home-netops-aliyun-ddns.service` and `.timer`.
-- `firewall`: installs `home-netops-tencent-firewall.service` and `.timer`.
-- `reverse-ssh`: installs `home-netops-reverse-ssh.service`; it requires `firewall`.
-- `easytier`: installs `home-netops-easytier.service`; it requires `firewall`.
-- `server`: installs `home-netops-proxy-server.service`; it requires `easytier`.
-- `all`: installs everything, but it must still be specified explicitly.
-
-Edit config before the first real run:
-
-```bash
-sudoedit /etc/home-netops/home-netops.conf
-```
-
-## Manual Commands
-
-Run one DDNS update:
-
-```bash
-sudo /usr/local/lib/home-netops/ddns/aliyun.sh
-```
-
-Sync the Tencent firewall rule:
-
-```bash
-sudo /usr/local/lib/home-netops/firewall/tencent.sh
-```
-
-Run the configured EasyTier node directly:
-
-```bash
-sudo /usr/local/lib/home-netops/lib/easytier.sh
-```
-
-Control the reverse SSH tunnel:
-
-```bash
-sudo systemctl start home-netops-reverse-ssh.service
-sudo systemctl stop home-netops-reverse-ssh.service
-sudo journalctl -u home-netops-reverse-ssh.service -f
-```
-
-Run the configured reverse SSH command directly:
-
-```bash
-sudo /usr/local/lib/home-netops/lib/reverse-ssh.sh
-```
-
-Run the configured proxy server directly:
-
-```bash
-sudo /usr/local/lib/home-netops/lib/proxy-server.sh
 ```
 
 ## Configuration
 
-Start from `config/home-netops.conf.example`. Important fields:
+Edit `config/home-netops.json`.
 
-- `PUBLIC_IP_URLS`, `PUBLIC_IP_TIMEOUT`: public IPv4 probes.
-- `PUBLIC_IP_NO_PROXY`: defaults to `1`, so public IPv4 detection bypasses proxy environment variables and returns the local network egress IP instead of the proxy server IP.
-- `ALIYUN_*`: DNS profile, domain, RR, record type, line, and TTL.
-- `TENCENT_*`: Lighthouse instance, region, protocol, port, action, and rule description.
-- `RESTART_REVERSE_AFTER_FIREWALL_CHANGE`: restart reverse SSH when the firewall IP changes.
-- `CLOUD_HOST`, `CLOUD_USER`, `CLOUD_PORT`: cloud host IP/user/SSH port used by `home-netops-reverse-ssh.service`.
-- `REMOTE_BIND_*`, `LOCAL_TARGET_*`: reverse SSH forwarding settings.
-- `IDENTITY_FILE`: optional SSH private key path.
-- `CHECK_LOCAL_SSHD`: set to `0` to skip the local SSH port check.
-- `EASYTIER_BIN`: path to `easytier-core`.
-- `EASYTIER_CONFIG`: EasyTier config file used by `home-netops-easytier.service`, for example `/etc/home-netops/easytier-home.yaml`.
-- `EASYTIER_LAN_IP`: EasyTier LAN IP to bind the proxy server on. Leave empty to read `ipv4` from `EASYTIER_CONFIG`.
-- `GOST_BIN`: path to `gost`.
-- `PROXY_SOCKS_PORT`, `PROXY_HTTP_PORT`: SOCKS5 and HTTP proxy listen ports.
+```json
+{
+  "shared": {
+    "PUBLIC_IP_TIMEOUT": "8"
+  },
+  "services": {
+    "easytier": {
+      "EASYTIER_BIN": "easytier-core"
+    },
+    "proxy-server": {
+      "GOST_BIN": "gost",
+      "PROXY_SOCKS_PORT": "1080",
+      "PROXY_HTTP_PORT": "8080"
+    }
+  },
+  "roles": {
+    "ali": {
+      "services": ["easytier", "proxy-server"],
+      "overrides": {
+        "easytier": {
+          "EASYTIER_CONFIG": "config/easytier-ali.yaml"
+        }
+      }
+    }
+  }
+}
+```
+
+`shared` applies to every role. `services.<service>` groups default variables by service. `roles.<role>.overrides.<service>` overrides one service for one role. Explicit environment variables override JSON values at runtime.
+
+Supported services:
+
+- `ddns`: Aliyun DNS A record update.
+- `firewall`: Tencent Lighthouse firewall rule sync.
+- `reverse-ssh`: reverse SSH tunnel; requires `firewall`.
+- `easytier`: EasyTier node.
+- `proxy-server`: SOCKS5/HTTP proxy server; requires `easytier`.
+
+Relative paths in JSON, such as `config/easytier-ali.yaml`, are resolved from `HOME_NETOPS_APP_HOME`, which the installer sets to the repository path.
+
+## Install
+
+Install the current repository for a role:
+
+```bash
+sudo ./install.sh --role home --config ./config/home-netops.json
+sudo ./install.sh --role ali --config ./config/home-netops.json
+sudo ./install.sh --role tencent --config ./config/home-netops.json
+```
+
+Install units without enabling or starting them:
+
+```bash
+sudo ./install.sh --role home --config ./config/home-netops.json --no-start
+```
+
+Install from a different application directory:
+
+```bash
+sudo ./install.sh --role ali --config /opt/home-netops/config/home-netops.json --app-home /opt/home-netops
+```
+
+The old interactive and `--services` installation modes are intentionally removed. The role config is the only source of enabled services.
+
+## Check
+
+Run a read-only check after editing config or installing units:
+
+```bash
+./check.sh --role home --config ./config/home-netops.json
+```
+
+The check validates JSON structure, service dependencies, required commands, important config values, EasyTier config paths, and systemd unit status.
+
+## Manual Commands
+
+Run a service entrypoint directly by setting the role, config, and app home:
+
+```bash
+export HOME_NETOPS_ROLE=home
+export HOME_NETOPS_CONFIG="$PWD/config/home-netops.json"
+export HOME_NETOPS_APP_HOME="$PWD"
+
+sudo -E ./ddns/aliyun.sh
+sudo -E ./firewall/tencent.sh
+sudo -E ./lib/reverse-ssh.sh
+sudo -E ./lib/easytier.sh
+sudo -E ./lib/proxy-server.sh
+```
+
+Control installed systemd units:
+
+```bash
+sudo systemctl status home-netops-easytier.service
+sudo journalctl -u home-netops-easytier.service -f
+```
 
 ## Proxy Client
 
@@ -189,17 +163,13 @@ export https_proxy=http://10.144.144.3:8080
 
 ## Uninstall
 
-Keep config:
+Remove generated home-netops systemd units:
 
 ```bash
 sudo ./uninstall.sh --yes
 ```
 
-Remove config too:
-
-```bash
-sudo ./uninstall.sh --purge --yes
-```
+This does not remove the repository, JSON config, or EasyTier configs.
 
 ## Test
 
@@ -207,18 +177,4 @@ The test suite is offline and uses mocks for `systemctl` and cloud CLIs.
 
 ```bash
 tests/run.sh
-```
-
-## EasyTier Configs
-
-EasyTier configs are kept under `config/` and copied into `/etc/home-netops/` during install:
-
-- `easytier-home.yaml`
-- `easytier-ali.yaml`
-- `easytier-tencent.yaml`
-
-Manual run example:
-
-```bash
-easytier-core --config-file /etc/home-netops/easytier-home.yaml
 ```

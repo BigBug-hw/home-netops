@@ -8,7 +8,8 @@ source "$SCRIPT_DIR/common.sh"
 load_config
 
 EASYTIER_BIN="${EASYTIER_BIN:-easytier-core}"
-EASYTIER_CONFIG="${EASYTIER_CONFIG:-/etc/home-netops/easytier-home.yaml}"
+EASYTIER_CONFIG="${EASYTIER_CONFIG:-config/easytier-${HOME_NETOPS_ROLE}.yaml}"
+EASYTIER_CONFIG="$(resolve_app_path "$EASYTIER_CONFIG")"
 
 main() {
     need_cmd "$EASYTIER_BIN"

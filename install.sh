@@ -1,49 +1,62 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_NAME="home-netops"
-PREFIX="${PREFIX:-/usr/local}"
-LIB_DIR="${HOME_NETOPS_LIB_DIR:-$PREFIX/lib/$PROJECT_NAME}"
-ETC_DIR="${HOME_NETOPS_ETC_DIR:-/etc/$PROJECT_NAME}"
-CONFIG_FILE="${HOME_NETOPS_CONFIG:-$ETC_DIR/$PROJECT_NAME.conf}"
 SYSTEMD_DIR="${HOME_NETOPS_SYSTEMD_DIR:-/etc/systemd/system}"
 SYSTEMCTL="${HOME_NETOPS_SYSTEMCTL:-systemctl}"
 START_SERVICES=1
-SERVICES=""
-INTERACTIVE=0
+ROLE=""
+CONFIG=""
+APP_HOME=""
 
 usage() {
     cat <<USAGE
-Usage: sudo ./install.sh --services LIST [--no-start]
-       sudo ./install.sh --interactive [--no-start]
+Usage: sudo ./install.sh --role ROLE --config FILE [--app-home DIR] [--no-start]
 
 Options:
-  --services LIST
-               Comma-separated services to install: all, ddns, firewall, reverse-ssh, easytier, server.
-               Required for non-interactive use.
-               reverse-ssh and easytier require firewall; server requires easytier.
-  --interactive
-               Prompt for services instead of reading --services.
-  --no-start   Install files and reload systemd without enabling or starting services.
+  --role ROLE     Role to install from config: home, ali, or tencent.
+  --config FILE   JSON config file defining roles, services, and variables.
+  --app-home DIR  Application directory. Defaults to this repository directory.
+  --no-start      Install units and reload systemd without enabling or starting services.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --services)
+        --role)
             [[ $# -ge 2 ]] || {
-                echo "ERROR: --services requires a value" >&2
+                echo "ERROR: --role requires a value" >&2
                 usage >&2
                 exit 2
             }
-            SERVICES="$2"
+            ROLE="$2"
             shift
             ;;
-        --services=*)
-            SERVICES="${1#*=}"
+        --role=*)
+            ROLE="${1#*=}"
             ;;
-        --interactive)
-            INTERACTIVE=1
+        --config)
+            [[ $# -ge 2 ]] || {
+                echo "ERROR: --config requires a value" >&2
+                usage >&2
+                exit 2
+            }
+            CONFIG="$2"
+            shift
+            ;;
+        --config=*)
+            CONFIG="${1#*=}"
+            ;;
+        --app-home)
+            [[ $# -ge 2 ]] || {
+                echo "ERROR: --app-home requires a value" >&2
+                usage >&2
+                exit 2
+            }
+            APP_HOME="$2"
+            shift
+            ;;
+        --app-home=*)
+            APP_HOME="${1#*=}"
             ;;
         --no-start)
             START_SERVICES=0
@@ -51,6 +64,11 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             usage
             exit 0
+            ;;
+        --services|--services=*|--interactive)
+            echo "ERROR: $1 is not supported; services are defined in the JSON role config" >&2
+            usage >&2
+            exit 2
             ;;
         *)
             echo "ERROR: unknown option: $1" >&2
@@ -67,9 +85,20 @@ if [[ "${HOME_NETOPS_ALLOW_NON_ROOT:-0}" != "1" && "${EUID:-$(id -u)}" -ne 0 ]];
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-selected_services=()
-units=()
-enable_units=()
+APP_HOME="${APP_HOME:-$SCRIPT_DIR}"
+
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/common.sh"
+
+[[ -n "$ROLE" ]] || die "--role is required"
+[[ -n "$CONFIG" ]] || die "--config is required"
+APP_HOME="$(cd -- "$APP_HOME" && pwd)"
+CONFIG="$(cd -- "$(dirname -- "$CONFIG")" && pwd)/$(basename -- "$CONFIG")"
+
+HOME_NETOPS_ROLE="$ROLE"
+HOME_NETOPS_CONFIG="$CONFIG"
+load_role_services "$CONFIG" "$ROLE"
+
 scripts=(
     lib/common.sh
     lib/easytier.sh
@@ -78,143 +107,188 @@ scripts=(
     lib/reverse-ssh.sh
     ddns/aliyun.sh
     firewall/tencent.sh
+    install.sh
+    uninstall.sh
+    check.sh
 )
 
-has_service() {
-    local service="$1" selected
-
-    for selected in "${selected_services[@]}"; do
-        [[ "$selected" == "$service" ]] && return 0
-    done
-    return 1
-}
-
-prompt_services() {
-    printf 'Select services to install (all, ddns, firewall, reverse-ssh, easytier, server).\n' >&2
-    printf 'Use comma-separated names, for example: firewall,easytier,server\n' >&2
-    printf 'Note: reverse-ssh and easytier require firewall.\n' >&2
-    printf 'Note: server requires easytier.\n' >&2
-    printf 'Services: ' >&2
-    read -r SERVICES
-}
-
-parse_services() {
-    local raw_items item
-
-    if [[ -z "$SERVICES" ]]; then
-        if [[ "$INTERACTIVE" == "1" || -t 0 ]]; then
-            prompt_services
-        else
-            echo "ERROR: install scope is required. Use --services LIST or --interactive." >&2
-            usage >&2
-            exit 2
-        fi
-    fi
-
-    SERVICES="${SERVICES//[[:space:]]/}"
-    if [[ -z "$SERVICES" ]]; then
-        echo "ERROR: install scope is required; no default service is selected." >&2
-        exit 2
-    fi
-
-    if [[ "$SERVICES" == "all" ]]; then
-        selected_services=(ddns firewall reverse-ssh easytier server)
-        return
-    fi
-
-    IFS=',' read -ra raw_items <<< "$SERVICES"
-    for item in "${raw_items[@]}"; do
-        case "$item" in
-            ddns|firewall|reverse-ssh|easytier|server)
-                selected_services+=("$item")
-                ;;
-            all)
-                echo "ERROR: all must be used by itself." >&2
-                exit 2
-                ;;
-            "")
-                echo "ERROR: empty service name in --services." >&2
-                exit 2
-                ;;
-            *)
-                echo "ERROR: unknown service: $item" >&2
-                usage >&2
-                exit 2
-                ;;
-        esac
-    done
-
-    if has_service reverse-ssh && ! has_service firewall; then
-        echo "ERROR: reverse-ssh requires firewall. Use --services firewall,reverse-ssh." >&2
-        exit 2
-    fi
-
-    if has_service easytier && ! has_service firewall; then
-        echo "ERROR: easytier requires firewall. Use --services firewall,easytier." >&2
-        exit 2
-    fi
-
-    if has_service server && ! has_service easytier; then
-        echo "ERROR: server requires easytier. Use --services firewall,easytier,server." >&2
-        exit 2
-    fi
-}
-
-select_units() {
-    if has_service ddns; then
-        units+=(home-netops-aliyun-ddns.service home-netops-aliyun-ddns.timer)
-        enable_units+=(home-netops-aliyun-ddns.timer)
-    fi
-
-    if has_service firewall; then
-        units+=(home-netops-tencent-firewall.service home-netops-tencent-firewall.timer)
-        enable_units+=(home-netops-tencent-firewall.timer)
-    fi
-
-    if has_service reverse-ssh; then
-        units+=(home-netops-reverse-ssh.service)
-        enable_units+=(home-netops-reverse-ssh.service)
-    fi
-
-    if has_service easytier; then
-        units+=(home-netops-easytier.service)
-        enable_units+=(home-netops-easytier.service)
-    fi
-
-    if has_service server; then
-        units+=(home-netops-proxy-server.service)
-        enable_units+=(home-netops-proxy-server.service)
-    fi
-}
-
-parse_services
-select_units
-
-for script in "${scripts[@]}" install.sh uninstall.sh; do
-    bash -n "$SCRIPT_DIR/$script"
-done
-
-install -d -m 0755 "$LIB_DIR" "$LIB_DIR/ddns" "$LIB_DIR/firewall" "$LIB_DIR/lib" "$ETC_DIR" "$SYSTEMD_DIR"
 for script in "${scripts[@]}"; do
-    install -m 0755 "$SCRIPT_DIR/$script" "$LIB_DIR/$script"
-done
-for config in "$SCRIPT_DIR"/config/easytier-*.yaml; do
-    [[ -e "$config" ]] || continue
-    target="$ETC_DIR/$(basename "$config")"
-    if [[ ! -f "$target" ]]; then
-        install -m 0644 "$config" "$target"
-    fi
+    [[ -f "$APP_HOME/$script" ]] || die "missing app file: $APP_HOME/$script"
+    bash -n "$APP_HOME/$script"
 done
 
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    install -m 0600 "$SCRIPT_DIR/config/home-netops.conf.example" "$CONFIG_FILE"
-    echo "created config: $CONFIG_FILE"
-else
-    echo "kept existing config: $CONFIG_FILE"
-fi
+unit_for_service() {
+    case "$1" in
+        ddns)
+            printf '%s\n' home-netops-aliyun-ddns.service home-netops-aliyun-ddns.timer
+            ;;
+        firewall)
+            printf '%s\n' home-netops-tencent-firewall.service home-netops-tencent-firewall.timer
+            ;;
+        reverse-ssh)
+            printf '%s\n' home-netops-reverse-ssh.service
+            ;;
+        easytier)
+            printf '%s\n' home-netops-easytier.service
+            ;;
+        proxy-server)
+            printf '%s\n' home-netops-proxy-server.service
+            ;;
+    esac
+}
 
-for unit in "${units[@]}"; do
-    install -m 0644 "$SCRIPT_DIR/systemd/$unit" "$SYSTEMD_DIR/$unit"
+enable_unit_for_service() {
+    case "$1" in
+        ddns)
+            printf '%s\n' home-netops-aliyun-ddns.timer
+            ;;
+        firewall)
+            printf '%s\n' home-netops-tencent-firewall.timer
+            ;;
+        reverse-ssh)
+            printf '%s\n' home-netops-reverse-ssh.service
+            ;;
+        easytier)
+            printf '%s\n' home-netops-easytier.service
+            ;;
+        proxy-server)
+            printf '%s\n' home-netops-proxy-server.service
+            ;;
+    esac
+}
+
+unit_env() {
+    cat <<UNIT
+Environment=HOME_NETOPS_ROLE=$ROLE
+Environment=HOME_NETOPS_CONFIG=$CONFIG
+Environment=HOME_NETOPS_APP_HOME=$APP_HOME
+UNIT
+}
+
+write_service_unit() {
+    local unit="$1" description="$2" exec_start="$3" type="$4" requires="${5:-}" after_extra="${6:-}"
+    local target="$SYSTEMD_DIR/$unit"
+
+    {
+        printf '[Unit]\n'
+        printf 'Description=%s\n' "$description"
+        printf 'After=network-online.target'
+        [[ -n "$after_extra" ]] && printf ' %s' "$after_extra"
+        printf '\n'
+        printf 'Wants=network-online.target\n'
+        [[ -n "$requires" ]] && printf 'Requires=%s\n' "$requires"
+        printf '\n[Service]\n'
+        printf 'Type=%s\n' "$type"
+        printf 'User=root\nGroup=root\n'
+        unit_env
+        printf 'ExecStart=%s\n' "$exec_start"
+        if [[ "$type" == "simple" ]]; then
+            printf 'Restart=always\nRestartSec=5\n'
+        fi
+        if [[ "$type" == "simple" ]]; then
+            printf '\n[Install]\nWantedBy=multi-user.target\n'
+        fi
+    } > "$target"
+    chmod 0644 "$target"
+}
+
+write_timer_unit() {
+    local unit="$1" description="$2" service_unit="$3"
+    local target="$SYSTEMD_DIR/$unit"
+
+    cat > "$target" <<UNIT
+[Unit]
+Description=$description
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=10min
+AccuracySec=30s
+Persistent=true
+Unit=$service_unit
+
+[Install]
+WantedBy=timers.target
+UNIT
+    chmod 0644 "$target"
+}
+
+write_units_for_service() {
+    local service="$1"
+
+    case "$service" in
+        ddns)
+            write_service_unit \
+                home-netops-aliyun-ddns.service \
+                "home-netops Aliyun DDNS update" \
+                "$APP_HOME/ddns/aliyun.sh" \
+                oneshot
+            write_timer_unit \
+                home-netops-aliyun-ddns.timer \
+                "Run home-netops Aliyun DDNS update periodically" \
+                home-netops-aliyun-ddns.service
+            ;;
+        firewall)
+            write_service_unit \
+                home-netops-tencent-firewall.service \
+                "home-netops Tencent firewall update" \
+                "$APP_HOME/firewall/tencent.sh" \
+                oneshot
+            write_timer_unit \
+                home-netops-tencent-firewall.timer \
+                "Run home-netops Tencent firewall update periodically" \
+                home-netops-tencent-firewall.service
+            ;;
+        reverse-ssh)
+            write_service_unit \
+                home-netops-reverse-ssh.service \
+                "home-netops reverse SSH tunnel" \
+                "$APP_HOME/lib/reverse-ssh.sh" \
+                simple \
+                home-netops-tencent-firewall.service \
+                home-netops-tencent-firewall.service
+            ;;
+        easytier)
+            if has_item firewall "${HOME_NETOPS_SERVICES[@]}"; then
+                write_service_unit \
+                    home-netops-easytier.service \
+                    "home-netops EasyTier node" \
+                    "$APP_HOME/lib/easytier.sh" \
+                    simple \
+                    home-netops-tencent-firewall.service \
+                    home-netops-tencent-firewall.service
+            else
+                write_service_unit \
+                    home-netops-easytier.service \
+                    "home-netops EasyTier node" \
+                    "$APP_HOME/lib/easytier.sh" \
+                    simple
+            fi
+            ;;
+        proxy-server)
+            write_service_unit \
+                home-netops-proxy-server.service \
+                "home-netops proxy server on EasyTier network" \
+                "$APP_HOME/lib/proxy-server.sh" \
+                simple \
+                home-netops-easytier.service \
+                home-netops-easytier.service
+            ;;
+    esac
+}
+
+install -d -m 0755 "$SYSTEMD_DIR"
+
+units=()
+enable_units=()
+for service in "${HOME_NETOPS_SERVICES[@]}"; do
+    write_units_for_service "$service"
+    while IFS= read -r unit; do
+        units+=("$unit")
+    done < <(unit_for_service "$service")
+    while IFS= read -r unit; do
+        enable_units+=("$unit")
+    done < <(enable_unit_for_service "$service")
 done
 
 "$SYSTEMCTL" daemon-reload
@@ -225,4 +299,4 @@ if [[ "$START_SERVICES" == "1" ]]; then
     done
 fi
 
-echo "home-netops installed: ${selected_services[*]}"
+echo "home-netops installed role=$ROLE services=${HOME_NETOPS_SERVICES[*]}"
