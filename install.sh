@@ -72,9 +72,9 @@ enable_units=()
 scripts=(
     lib/common.sh
     lib/get-public-ip.sh
+    lib/reverse-ssh.sh
     ddns/aliyun.sh
     firewall/tencent.sh
-    reverse-ssh.sh
 )
 
 has_service() {

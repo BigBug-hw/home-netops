@@ -3,11 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/lib/common.sh"
+source "$SCRIPT_DIR/common.sh"
 
 load_config
 
-CLOUD_HOST="${CLOUD_HOST:-82.156.118.129}"
+CLOUD_HOST="${CLOUD_HOST:-}"
 CLOUD_USER="${CLOUD_USER:-root}"
 CLOUD_PORT="${CLOUD_PORT:-22}"
 REMOTE_BIND_ADDR="${REMOTE_BIND_ADDR:-127.0.0.1}"
@@ -20,6 +20,7 @@ CHECK_LOCAL_SSHD="${CHECK_LOCAL_SSHD:-1}"
 
 main() {
     need_cmd "$AUTOSSH_BIN"
+    [[ -n "$CLOUD_HOST" ]] || die "CLOUD_HOST must be set in $HOME_NETOPS_CONFIG"
 
     if [[ "$CHECK_LOCAL_SSHD" == "1" ]]; then
         need_cmd ss

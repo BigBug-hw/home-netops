@@ -22,8 +22,8 @@ scripts=(
     ddns/aliyun.sh
     lib/common.sh
     lib/get-public-ip.sh
+    lib/reverse-ssh.sh
     install.sh
-    reverse-ssh.sh
     firewall/tencent.sh
     uninstall.sh
 )
@@ -40,6 +40,8 @@ grep -q 'After=.*home-netops-tencent-firewall.service' "$ROOT/systemd/home-netop
     || fail "reverse SSH service must start after firewall service"
 grep -q 'ExecStart=/usr/local/lib/home-netops/firewall/tencent.sh' "$ROOT/systemd/home-netops-tencent-firewall.service" \
     || fail "firewall service must run Tencent sync script"
+grep -q 'ExecStart=/usr/local/lib/home-netops/lib/reverse-ssh.sh' "$ROOT/systemd/home-netops-reverse-ssh.service" \
+    || fail "reverse SSH service must run shared reverse SSH tool"
 
 mockbin="$TMP/bin"
 mkdir -p "$mockbin"
@@ -54,6 +56,11 @@ printf '%s\n' "$*" >> "$CURL_LOG"
 printf '203.0.113.9\n'
 MOCK
 chmod +x "$mockbin/curl"
+cat > "$mockbin/autossh" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$AUTOSSH_LOG"
+MOCK
+chmod +x "$mockbin/autossh"
 
 CURL_LOG="$TMP/curl.log" \
 PATH="$mockbin:$PATH" \
@@ -64,6 +71,28 @@ https_proxy="http://proxy.invalid:8080" \
 all_proxy="socks5://proxy.invalid:1080" \
 "$ROOT/lib/get-public-ip.sh" >/dev/null
 grep -q -- "--noproxy \\*" "$TMP/curl.log" || fail "public IP lookup must bypass proxy by default"
+
+reverse_config="$TMP/reverse.conf"
+cat > "$reverse_config" <<'CONF'
+CLOUD_HOST="198.51.100.44"
+CLOUD_USER="deploy"
+CLOUD_PORT="22022"
+REMOTE_BIND_ADDR="127.0.0.1"
+REMOTE_BIND_PORT="2222"
+LOCAL_TARGET_HOST="127.0.0.1"
+LOCAL_TARGET_PORT="22"
+CHECK_LOCAL_SSHD="0"
+AUTOSSH_BIN="autossh"
+CONF
+AUTOSSH_LOG="$TMP/autossh.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_CONFIG="$reverse_config" \
+"$ROOT/lib/reverse-ssh.sh"
+grep -q -- "-p 22022" "$TMP/autossh.log" || fail "reverse SSH must use configured cloud SSH port"
+grep -q -- "-R 127.0.0.1:2222:127.0.0.1:22" "$TMP/autossh.log" \
+    || fail "reverse SSH must use configured tunnel bind"
+grep -q -- "deploy@198.51.100.44" "$TMP/autossh.log" \
+    || fail "reverse SSH must use configured cloud host"
 
 install_root="$TMP/install-root"
 mkdir -p "$install_root/etc" "$install_root/systemd"
@@ -79,9 +108,9 @@ HOME_NETOPS_ALLOW_NON_ROOT=1 \
 
 assert_file "$install_root/lib/home-netops/ddns/aliyun.sh"
 assert_file "$install_root/lib/home-netops/lib/get-public-ip.sh"
+assert_file "$install_root/lib/home-netops/lib/reverse-ssh.sh"
 assert_file "$install_root/lib/home-netops/firewall/tencent.sh"
 assert_file "$install_root/lib/home-netops/lib/common.sh"
-assert_file "$install_root/lib/home-netops/reverse-ssh.sh"
 assert_file "$install_root/etc/home-netops/home-netops.conf"
 assert_file "$install_root/systemd/home-netops-aliyun-ddns.service"
 assert_file "$install_root/systemd/home-netops-aliyun-ddns.timer"

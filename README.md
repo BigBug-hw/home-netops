@@ -11,8 +11,7 @@ Personal network automation for a home machine:
 ```text
 ddns/                 Aliyun DDNS update
 firewall/             Tencent Lighthouse firewall sync
-lib/                  Shared shell helpers and public IPv4 detection
-reverse-ssh.sh        autossh reverse tunnel entrypoint
+lib/                  Shared shell helpers, public IPv4 detection, and reverse SSH tool
 install.sh            Install scripts, config example, and systemd units
 uninstall.sh          Stop services and remove installed files
 systemd/              systemd service and timer units
@@ -61,7 +60,7 @@ This copies scripts into `/usr/local/lib/home-netops`, creates `/etc/home-netops
 Install without starting services:
 
 ```bash
-sudo ./install.sh --no-start
+sudo ./install.sh --services all --no-start
 ```
 
 Install only selected services:
@@ -115,6 +114,12 @@ sudo systemctl stop home-netops-reverse-ssh.service
 sudo journalctl -u home-netops-reverse-ssh.service -f
 ```
 
+Run the configured reverse SSH command directly:
+
+```bash
+sudo /usr/local/lib/home-netops/lib/reverse-ssh.sh
+```
+
 ## Configuration
 
 Start from `config/home-netops.conf.example`. Important fields:
@@ -124,7 +129,8 @@ Start from `config/home-netops.conf.example`. Important fields:
 - `ALIYUN_*`: DNS profile, domain, RR, record type, line, and TTL.
 - `TENCENT_*`: Lighthouse instance, region, protocol, port, action, and rule description.
 - `RESTART_REVERSE_AFTER_FIREWALL_CHANGE`: restart reverse SSH when the firewall IP changes.
-- `CLOUD_*`, `REMOTE_BIND_*`, `LOCAL_TARGET_*`: reverse SSH endpoint and forwarding settings.
+- `CLOUD_HOST`, `CLOUD_USER`, `CLOUD_PORT`: cloud host IP/user/SSH port used by `home-netops-reverse-ssh.service`.
+- `REMOTE_BIND_*`, `LOCAL_TARGET_*`: reverse SSH forwarding settings.
 - `IDENTITY_FILE`: optional SSH private key path.
 - `CHECK_LOCAL_SSHD`: set to `0` to skip the local SSH port check.
 
