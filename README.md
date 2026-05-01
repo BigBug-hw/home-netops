@@ -49,7 +49,7 @@ tccli auth login --browser no
 ## Install
 
 ```bash
-sudo ./install.sh
+sudo ./install.sh --services all
 ```
 
 This copies scripts into `/usr/local/lib/home-netops`, creates `/etc/home-netops/home-netops.conf` if missing, installs systemd units, reloads systemd, and enables:
@@ -63,6 +63,29 @@ Install without starting services:
 ```bash
 sudo ./install.sh --no-start
 ```
+
+Install only selected services:
+
+```bash
+sudo ./install.sh --services ddns
+sudo ./install.sh --services firewall
+sudo ./install.sh --services firewall,reverse-ssh
+```
+
+Interactive install:
+
+```bash
+sudo ./install.sh --interactive
+```
+
+The interactive prompt has no default; pressing Enter without a service name fails.
+
+Available service names:
+
+- `ddns`: installs `home-netops-aliyun-ddns.service` and `.timer`.
+- `firewall`: installs `home-netops-tencent-firewall.service` and `.timer`.
+- `reverse-ssh`: installs `home-netops-reverse-ssh.service`; it requires `firewall`.
+- `all`: installs everything, but it must still be specified explicitly.
 
 Edit config before the first real run:
 

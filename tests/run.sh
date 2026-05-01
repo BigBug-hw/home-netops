@@ -59,7 +59,7 @@ HOME_NETOPS_CONFIG="$install_root/etc/home-netops/home-netops.conf" \
 HOME_NETOPS_SYSTEMD_DIR="$install_root/systemd" \
 HOME_NETOPS_SYSTEMCTL="systemctl" \
 HOME_NETOPS_ALLOW_NON_ROOT=1 \
-"$ROOT/install.sh" --no-start
+"$ROOT/install.sh" --services all --no-start
 
 assert_file "$install_root/lib/home-netops/ddns/aliyun.sh"
 assert_file "$install_root/lib/home-netops/lib/get-public-ip.sh"
@@ -67,6 +67,10 @@ assert_file "$install_root/lib/home-netops/firewall/tencent.sh"
 assert_file "$install_root/lib/home-netops/lib/common.sh"
 assert_file "$install_root/lib/home-netops/reverse-ssh.sh"
 assert_file "$install_root/etc/home-netops/home-netops.conf"
+assert_file "$install_root/systemd/home-netops-aliyun-ddns.service"
+assert_file "$install_root/systemd/home-netops-aliyun-ddns.timer"
+assert_file "$install_root/systemd/home-netops-tencent-firewall.service"
+assert_file "$install_root/systemd/home-netops-tencent-firewall.timer"
 assert_file "$install_root/systemd/home-netops-reverse-ssh.service"
 grep -q 'systemctl daemon-reload' "$TMP/systemctl.log" || fail "install must reload systemd"
 
@@ -79,8 +83,93 @@ HOME_NETOPS_CONFIG="$install_root/etc/home-netops/home-netops.conf" \
 HOME_NETOPS_SYSTEMD_DIR="$install_root/systemd" \
 HOME_NETOPS_SYSTEMCTL="systemctl" \
 HOME_NETOPS_ALLOW_NON_ROOT=1 \
-"$ROOT/install.sh" --no-start
+"$ROOT/install.sh" --services all --no-start
 grep -q '# user change' "$install_root/etc/home-netops/home-netops.conf" || fail "install must not overwrite config"
+
+missing_scope_root="$TMP/missing-scope-root"
+mkdir -p "$missing_scope_root/etc" "$missing_scope_root/systemd"
+if SYSTEMCTL_LOG="$TMP/systemctl-missing-scope.log" \
+    PATH="$mockbin:$PATH" \
+    HOME_NETOPS_LIB_DIR="$missing_scope_root/lib/home-netops" \
+    HOME_NETOPS_ETC_DIR="$missing_scope_root/etc/home-netops" \
+    HOME_NETOPS_CONFIG="$missing_scope_root/etc/home-netops/home-netops.conf" \
+    HOME_NETOPS_SYSTEMD_DIR="$missing_scope_root/systemd" \
+    HOME_NETOPS_SYSTEMCTL="systemctl" \
+    HOME_NETOPS_ALLOW_NON_ROOT=1 \
+    "$ROOT/install.sh" --no-start >/dev/null 2>&1; then
+    fail "install without explicit scope must fail in non-interactive use"
+fi
+
+ddns_root="$TMP/ddns-root"
+mkdir -p "$ddns_root/etc" "$ddns_root/systemd"
+SYSTEMCTL_LOG="$TMP/systemctl-ddns.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_LIB_DIR="$ddns_root/lib/home-netops" \
+HOME_NETOPS_ETC_DIR="$ddns_root/etc/home-netops" \
+HOME_NETOPS_CONFIG="$ddns_root/etc/home-netops/home-netops.conf" \
+HOME_NETOPS_SYSTEMD_DIR="$ddns_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_ALLOW_NON_ROOT=1 \
+"$ROOT/install.sh" --services ddns
+assert_file "$ddns_root/systemd/home-netops-aliyun-ddns.service"
+assert_file "$ddns_root/systemd/home-netops-aliyun-ddns.timer"
+assert_not_file "$ddns_root/systemd/home-netops-tencent-firewall.service"
+assert_not_file "$ddns_root/systemd/home-netops-tencent-firewall.timer"
+assert_not_file "$ddns_root/systemd/home-netops-reverse-ssh.service"
+grep -q 'enable --now home-netops-aliyun-ddns.timer' "$TMP/systemctl-ddns.log" \
+    || fail "ddns install must enable ddns timer"
+if grep -q 'home-netops-tencent-firewall' "$TMP/systemctl-ddns.log"; then
+    fail "ddns install must not enable firewall units"
+fi
+if grep -q 'home-netops-reverse-ssh' "$TMP/systemctl-ddns.log"; then
+    fail "ddns install must not enable reverse SSH"
+fi
+
+interactive_root="$TMP/interactive-root"
+mkdir -p "$interactive_root/etc" "$interactive_root/systemd"
+env \
+    SYSTEMCTL_LOG="$TMP/systemctl-interactive.log" \
+    PATH="$mockbin:$PATH" \
+    HOME_NETOPS_LIB_DIR="$interactive_root/lib/home-netops" \
+    HOME_NETOPS_ETC_DIR="$interactive_root/etc/home-netops" \
+    HOME_NETOPS_CONFIG="$interactive_root/etc/home-netops/home-netops.conf" \
+    HOME_NETOPS_SYSTEMD_DIR="$interactive_root/systemd" \
+    HOME_NETOPS_SYSTEMCTL="systemctl" \
+    HOME_NETOPS_ALLOW_NON_ROOT=1 \
+    bash -c 'printf "firewall\n" | "$1" --interactive --no-start' _ "$ROOT/install.sh"
+assert_file "$interactive_root/systemd/home-netops-tencent-firewall.service"
+assert_file "$interactive_root/systemd/home-netops-tencent-firewall.timer"
+assert_not_file "$interactive_root/systemd/home-netops-aliyun-ddns.service"
+assert_not_file "$interactive_root/systemd/home-netops-reverse-ssh.service"
+
+empty_interactive_root="$TMP/empty-interactive-root"
+mkdir -p "$empty_interactive_root/etc" "$empty_interactive_root/systemd"
+if env \
+    SYSTEMCTL_LOG="$TMP/systemctl-empty-interactive.log" \
+    PATH="$mockbin:$PATH" \
+    HOME_NETOPS_LIB_DIR="$empty_interactive_root/lib/home-netops" \
+    HOME_NETOPS_ETC_DIR="$empty_interactive_root/etc/home-netops" \
+    HOME_NETOPS_CONFIG="$empty_interactive_root/etc/home-netops/home-netops.conf" \
+    HOME_NETOPS_SYSTEMD_DIR="$empty_interactive_root/systemd" \
+    HOME_NETOPS_SYSTEMCTL="systemctl" \
+    HOME_NETOPS_ALLOW_NON_ROOT=1 \
+    bash -c 'printf "\n" | "$1" --interactive --no-start >/dev/null 2>&1' _ "$ROOT/install.sh"; then
+    fail "interactive install with empty selection must fail"
+fi
+
+bad_root="$TMP/bad-root"
+mkdir -p "$bad_root/etc" "$bad_root/systemd"
+if SYSTEMCTL_LOG="$TMP/systemctl-bad.log" \
+    PATH="$mockbin:$PATH" \
+    HOME_NETOPS_LIB_DIR="$bad_root/lib/home-netops" \
+    HOME_NETOPS_ETC_DIR="$bad_root/etc/home-netops" \
+    HOME_NETOPS_CONFIG="$bad_root/etc/home-netops/home-netops.conf" \
+    HOME_NETOPS_SYSTEMD_DIR="$bad_root/systemd" \
+    HOME_NETOPS_SYSTEMCTL="systemctl" \
+    HOME_NETOPS_ALLOW_NON_ROOT=1 \
+    "$ROOT/install.sh" --services reverse-ssh >/dev/null 2>&1; then
+    fail "reverse SSH install without firewall must fail"
+fi
 
 mock_get_ip="$TMP/get-ip.sh"
 cat > "$mock_get_ip" <<'MOCK'
