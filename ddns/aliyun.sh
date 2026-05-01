@@ -2,8 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/home-netops-lib.sh"
+source "$ROOT_DIR/lib/common.sh"
 
 load_config
 
@@ -13,7 +14,7 @@ ALIYUN_RR="${ALIYUN_RR:-home}"
 ALIYUN_TYPE="${ALIYUN_TYPE:-A}"
 ALIYUN_LINE="${ALIYUN_LINE:-default}"
 ALIYUN_TTL="${ALIYUN_TTL:-600}"
-GET_IP_SCRIPT="${GET_IP_SCRIPT:-$SCRIPT_DIR/get_public_ip.sh}"
+GET_IP_SCRIPT="${GET_IP_SCRIPT:-$ROOT_DIR/lib/get-public-ip.sh}"
 ALIYUN_BIN="${ALIYUN_BIN:-aliyun}"
 
 build_subdomain() {

@@ -1,10 +1,43 @@
 # home-netops
 
-## ddns
+Personal network automation for a home machine:
 
-安装`aliyun`, 参考: <https://help.aliyun.com/zh/cli/?spm=a2c4g.11186623.0.0.43e2668bNUnuhx>
+- Aliyun DDNS keeps `home.bigbug.ren` pointed at the current public IPv4.
+- Tencent Lighthouse firewall keeps one SSH allow rule in sync with the current public IPv4.
+- Reverse SSH exposes the home SSH service through the cloud host after the firewall rule is ready.
 
-## firewall
+## Layout
+
+```text
+ddns/                 Aliyun DDNS update
+firewall/             Tencent Lighthouse firewall sync
+lib/                  Shared shell helpers and public IPv4 detection
+reverse-ssh.sh        autossh reverse tunnel entrypoint
+install.sh            Install scripts, config example, and systemd units
+uninstall.sh          Stop services and remove installed files
+systemd/              systemd service and timer units
+config/               Example config and EasyTier configs
+tests/run.sh          Offline regression checks with command mocks
+```
+
+The installed script root is `/usr/local/lib/home-netops`. Runtime config lives at `/etc/home-netops/home-netops.conf`.
+
+## Dependencies
+
+Install the tools used by the enabled features:
+
+```bash
+sudo apt install autossh curl jq iproute2
+```
+
+Aliyun DDNS needs the Aliyun CLI configured with the profile in `ALIYUN_PROFILE`.
+
+```bash
+# Install and configure aliyun CLI according to Aliyun's current docs.
+aliyun configure --profile ddns
+```
+
+Tencent firewall sync needs `tccli`. The default config expects it in the project venv under `/usr/local/lib/home-netops/.venv/bin/tccli`.
 
 ```bash
 cd /usr/local/lib/home-netops
@@ -13,70 +46,92 @@ uv pip install tccli
 tccli auth login --browser no
 ```
 
-## easytier
-
-### 安装
-
-参考: <https://easytier.cn/>
-
-安装到`/home/bigbug/software/easytier`
-
-### tencent
-
-1. 启动web server(可选)
-
-    ```bash
-    ./easytier-web-embed --api-server-port 11211 --api-host "http://127.0.0.1:11211" --config-server-port 22020 --config-server-protocol udp
-    ```
-
-2. 启动共享节点:
-
-    ```bash
-    ./easytier-linux-x86_64/easytier-core --config-file ./easytier-tencent.yaml
-    ```
-
-    可以指定`--config-server udp://127.0.0.1:22020/admin`通过web管理设备
-
-3. 安装到系统服务
+## Install
 
 ```bash
-sudo ./easytier-linux-x86_64/easytier-cli service install \
-    --description "easytier" \
-    --display-name "easytier" \
-    --disable-autostart \
-    --core-path /home/bigbug/software/easytier/easytier-linux-x86_64/easytier-core \
-    --service-work-dir /home/bigbug/software/easytier \
-    -- --config-file /home/bigbug/software/easytier/easytier-ali.toml
+sudo ./install.sh
 ```
 
-### home
+This copies scripts into `/usr/local/lib/home-netops`, creates `/etc/home-netops/home-netops.conf` if missing, installs systemd units, reloads systemd, and enables:
+
+- `home-netops-aliyun-ddns.timer`
+- `home-netops-tencent-firewall.timer`
+- `home-netops-reverse-ssh.service`
+
+Install without starting services:
 
 ```bash
-./easytier-linux-x86_64/easytier-core --config-file ./easytier-home.yaml
+sudo ./install.sh --no-start
 ```
 
+Edit config before the first real run:
+
 ```bash
-sudo ./easytier-linux-x86_64/easytier-cli service install \
-    --description "easytier" \
-    --display-name "easytier" \
-    --disable-autostart \
-    --core-path /home/renyq/software/easytier/easytier-linux-x86_64/easytier-core \
-    --service-work-dir /home/renyq/software/easytier \
-    -- --config-file /home/renyq/software/easytier/easytier-home.toml
+sudoedit /etc/home-netops/home-netops.conf
 ```
 
-### ali
+## Manual Commands
+
+Run one DDNS update:
 
 ```bash
-./easytier-linux-x86_64/easytier-core --config-file ./easytier-ali.yaml
+sudo /usr/local/lib/home-netops/ddns/aliyun.sh
 ```
 
+Sync the Tencent firewall rule:
+
 ```bash
-sudo ./easytier-linux-x86_64/easytier-cli service install \
-    --description "easytier" \
-    --display-name "easytier" \
-    --disable-autostart \
-    --core-path /home/bigbug/software/easytier/easytier-linux-x86_64/easytier-core \
-    --service-work-dir /home/bigbug/software/easytier \
-    -- --config-file /home/bigbug/software/easytier/easytier-ali.toml
+sudo /usr/local/lib/home-netops/firewall/tencent.sh
+```
+
+Control the reverse SSH tunnel:
+
+```bash
+sudo systemctl start home-netops-reverse-ssh.service
+sudo systemctl stop home-netops-reverse-ssh.service
+sudo journalctl -u home-netops-reverse-ssh.service -f
+```
+
+## Configuration
+
+Start from `config/home-netops.conf.example`. Important fields:
+
+- `PUBLIC_IP_URLS`, `PUBLIC_IP_TIMEOUT`: public IPv4 probes.
+- `ALIYUN_*`: DNS profile, domain, RR, record type, line, and TTL.
+- `TENCENT_*`: Lighthouse instance, region, protocol, port, action, and rule description.
+- `RESTART_REVERSE_AFTER_FIREWALL_CHANGE`: restart reverse SSH when the firewall IP changes.
+- `CLOUD_*`, `REMOTE_BIND_*`, `LOCAL_TARGET_*`: reverse SSH endpoint and forwarding settings.
+- `IDENTITY_FILE`: optional SSH private key path.
+- `CHECK_LOCAL_SSHD`: set to `0` to skip the local SSH port check.
+
+## Uninstall
+
+Keep config:
+
+```bash
+sudo ./uninstall.sh --yes
+```
+
+Remove config too:
+
+```bash
+sudo ./uninstall.sh --purge --yes
+```
+
+## Test
+
+The test suite is offline and uses mocks for `systemctl` and cloud CLIs.
+
+```bash
+tests/run.sh
+```
+
+## EasyTier Notes
+
+EasyTier configs are kept under `config/` for manual use.
+
+Example:
+
+```bash
+./easytier-linux-x86_64/easytier-core --config-file config/easytier-home.yaml
 ```

@@ -2,8 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/home-netops-lib.sh"
+source "$ROOT_DIR/lib/common.sh"
 
 load_config
 
@@ -14,7 +15,9 @@ TENCENT_FIREWALL_PORT="${TENCENT_FIREWALL_PORT:-22}"
 TENCENT_FIREWALL_ACTION="${TENCENT_FIREWALL_ACTION:-ACCEPT}"
 TENCENT_FIREWALL_RULE_DESC="${TENCENT_FIREWALL_RULE_DESC:-auto-wsl-home-ssh}"
 TCCLI_BIN="${TCCLI_BIN:-tccli}"
-GET_IP_SCRIPT="${GET_IP_SCRIPT:-$SCRIPT_DIR/get_public_ip.sh}"
+GET_IP_SCRIPT="${GET_IP_SCRIPT:-$ROOT_DIR/lib/get-public-ip.sh}"
+SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
+RESTART_REVERSE_AFTER_FIREWALL_CHANGE="${RESTART_REVERSE_AFTER_FIREWALL_CHANGE:-1}"
 
 describe_rules() {
     "$TCCLI_BIN" lighthouse DescribeFirewallRules \
@@ -62,6 +65,16 @@ delete_rule_json() {
         --FirewallRules "$rule_json"
 }
 
+restart_reverse_ssh_if_needed() {
+    local changed="$1"
+
+    if [[ "$RESTART_REVERSE_AFTER_FIREWALL_CHANGE" == "1" ]] \
+        && [[ "$changed" == "1" ]] \
+        && "$SYSTEMCTL_BIN" list-unit-files home-netops-reverse-ssh.service >/dev/null 2>&1; then
+        "$SYSTEMCTL_BIN" try-restart home-netops-reverse-ssh.service
+    fi
+}
+
 main() {
     need_cmd "$TCCLI_BIN"
     need_cmd jq
@@ -70,7 +83,7 @@ main() {
     local current_ip cidr resp matched exact_count stale_count changed
     changed=0
     current_ip="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')" || die "failed to get public IPv4"
-    cidr="${current_ip}"
+    cidr="${current_ip}/32"
 
     log "syncing Tencent firewall rule desc=$TENCENT_FIREWALL_RULE_DESC cidr=$cidr"
 
@@ -114,6 +127,7 @@ main() {
     if (( exact_count > 0 )); then
         log "firewall_changed=$changed"
         log "no change: Tencent firewall already allows $cidr"
+        restart_reverse_ssh_if_needed "$changed"
         exit 0
     fi
 
@@ -121,6 +135,7 @@ main() {
     create_rule "$cidr"
     changed=1
     log "firewall_changed=$changed"
+    restart_reverse_ssh_if_needed "$changed"
     log "Tencent firewall update success"
 }
 

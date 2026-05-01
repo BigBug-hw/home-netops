@@ -23,7 +23,3 @@ load_config() {
         source "$HOME_NETOPS_CONFIG"
     fi
 }
-
-script_dir() {
-    cd -- "$(dirname -- "${BASH_SOURCE[1]}")" && pwd
-}

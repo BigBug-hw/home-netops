@@ -44,14 +44,11 @@ fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 scripts=(
-    home-netops-lib.sh
-    get_public_ip.sh
-    aliyun-ddns.sh
-    tencent_firewall.sh
-    tencent-firewall-service.sh
+    lib/common.sh
+    lib/get-public-ip.sh
+    ddns/aliyun.sh
+    firewall/tencent.sh
     reverse-ssh.sh
-    start.sh
-    stop.sh
 )
 units=(
     home-netops-aliyun-ddns.service
@@ -65,7 +62,7 @@ for script in "${scripts[@]}" install.sh uninstall.sh; do
     bash -n "$SCRIPT_DIR/$script"
 done
 
-install -d -m 0755 "$LIB_DIR" "$ETC_DIR" "$SYSTEMD_DIR"
+install -d -m 0755 "$LIB_DIR" "$LIB_DIR/ddns" "$LIB_DIR/firewall" "$LIB_DIR/lib" "$ETC_DIR" "$SYSTEMD_DIR"
 for script in "${scripts[@]}"; do
     install -m 0755 "$SCRIPT_DIR/$script" "$LIB_DIR/$script"
 done
