@@ -120,6 +120,7 @@ sudo journalctl -u home-netops-reverse-ssh.service -f
 Start from `config/home-netops.conf.example`. Important fields:
 
 - `PUBLIC_IP_URLS`, `PUBLIC_IP_TIMEOUT`: public IPv4 probes.
+- `PUBLIC_IP_NO_PROXY`: defaults to `1`, so public IPv4 detection bypasses proxy environment variables and returns the local network egress IP instead of the proxy server IP.
 - `ALIYUN_*`: DNS profile, domain, RR, record type, line, and TTL.
 - `TENCENT_*`: Lighthouse instance, region, protocol, port, action, and rule description.
 - `RESTART_REVERSE_AFTER_FIREWALL_CHANGE`: restart reverse SSH when the firewall IP changes.

@@ -48,6 +48,22 @@ cat > "$mockbin/systemctl" <<'MOCK'
 printf '%s\n' "systemctl $*" >> "$SYSTEMCTL_LOG"
 MOCK
 chmod +x "$mockbin/systemctl"
+cat > "$mockbin/curl" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CURL_LOG"
+printf '203.0.113.9\n'
+MOCK
+chmod +x "$mockbin/curl"
+
+CURL_LOG="$TMP/curl.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_CONFIG="$TMP/missing.conf" \
+PUBLIC_IP_URLS="https://example.invalid/ip" \
+http_proxy="http://proxy.invalid:8080" \
+https_proxy="http://proxy.invalid:8080" \
+all_proxy="socks5://proxy.invalid:1080" \
+"$ROOT/lib/get-public-ip.sh" >/dev/null
+grep -q -- "--noproxy \\*" "$TMP/curl.log" || fail "public IP lookup must bypass proxy by default"
 
 install_root="$TMP/install-root"
 mkdir -p "$install_root/etc" "$install_root/systemd"

@@ -4,6 +4,7 @@
 # Shared public IPv4 detection.
 PUBLIC_IP_URLS="https://ip.3322.net https://ddns.oray.com/checkip https://myip.ipip.net"
 PUBLIC_IP_TIMEOUT="8"
+PUBLIC_IP_NO_PROXY="1"
 
 # Aliyun DDNS.
 ALIYUN_BIN="aliyun"
