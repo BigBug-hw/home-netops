@@ -22,6 +22,7 @@ scripts=(
     ddns/aliyun.sh
     lib/common.sh
     lib/get-public-ip.sh
+    lib/proxy-server.sh
     lib/reverse-ssh.sh
     install.sh
     firewall/tencent.sh
@@ -42,6 +43,12 @@ grep -q 'ExecStart=/usr/local/lib/home-netops/firewall/tencent.sh' "$ROOT/system
     || fail "firewall service must run Tencent sync script"
 grep -q 'ExecStart=/usr/local/lib/home-netops/lib/reverse-ssh.sh' "$ROOT/systemd/home-netops-reverse-ssh.service" \
     || fail "reverse SSH service must run shared reverse SSH tool"
+grep -q 'Requires=easytier.service' "$ROOT/systemd/home-netops-proxy-server.service" \
+    || fail "proxy server service must require EasyTier"
+grep -q 'After=.*easytier.service' "$ROOT/systemd/home-netops-proxy-server.service" \
+    || fail "proxy server service must start after EasyTier"
+grep -q 'ExecStart=/usr/local/lib/home-netops/lib/proxy-server.sh' "$ROOT/systemd/home-netops-proxy-server.service" \
+    || fail "proxy server service must run shared proxy tool"
 
 mockbin="$TMP/bin"
 mkdir -p "$mockbin"
@@ -61,6 +68,11 @@ cat > "$mockbin/autossh" <<'MOCK'
 printf '%s\n' "$*" >> "$AUTOSSH_LOG"
 MOCK
 chmod +x "$mockbin/autossh"
+cat > "$mockbin/gost" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GOST_LOG"
+MOCK
+chmod +x "$mockbin/gost"
 
 CURL_LOG="$TMP/curl.log" \
 PATH="$mockbin:$PATH" \
@@ -94,6 +106,22 @@ grep -q -- "-R 127.0.0.1:2222:127.0.0.1:22" "$TMP/autossh.log" \
 grep -q -- "deploy@198.51.100.44" "$TMP/autossh.log" \
     || fail "reverse SSH must use configured cloud host"
 
+proxy_config="$TMP/proxy.conf"
+cat > "$proxy_config" <<'CONF'
+EASYTIER_LAN_IP="10.144.144.3"
+GOST_BIN="gost"
+PROXY_SOCKS_PORT="1080"
+PROXY_HTTP_PORT="8080"
+CONF
+GOST_LOG="$TMP/gost.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_CONFIG="$proxy_config" \
+"$ROOT/lib/proxy-server.sh"
+grep -q -- "-L socks5://10.144.144.3:1080" "$TMP/gost.log" \
+    || fail "proxy server must bind SOCKS to configured EasyTier IP"
+grep -q -- "-L http://10.144.144.3:8080" "$TMP/gost.log" \
+    || fail "proxy server must bind HTTP to configured EasyTier IP"
+
 install_root="$TMP/install-root"
 mkdir -p "$install_root/etc" "$install_root/systemd"
 SYSTEMCTL_LOG="$TMP/systemctl.log" \
@@ -108,6 +136,7 @@ HOME_NETOPS_ALLOW_NON_ROOT=1 \
 
 assert_file "$install_root/lib/home-netops/ddns/aliyun.sh"
 assert_file "$install_root/lib/home-netops/lib/get-public-ip.sh"
+assert_file "$install_root/lib/home-netops/lib/proxy-server.sh"
 assert_file "$install_root/lib/home-netops/lib/reverse-ssh.sh"
 assert_file "$install_root/lib/home-netops/firewall/tencent.sh"
 assert_file "$install_root/lib/home-netops/lib/common.sh"
@@ -117,6 +146,7 @@ assert_file "$install_root/systemd/home-netops-aliyun-ddns.timer"
 assert_file "$install_root/systemd/home-netops-tencent-firewall.service"
 assert_file "$install_root/systemd/home-netops-tencent-firewall.timer"
 assert_file "$install_root/systemd/home-netops-reverse-ssh.service"
+assert_file "$install_root/systemd/home-netops-proxy-server.service"
 grep -q 'systemctl daemon-reload' "$TMP/systemctl.log" || fail "install must reload systemd"
 
 echo '# user change' >> "$install_root/etc/home-netops/home-netops.conf"
@@ -169,6 +199,25 @@ fi
 if grep -q 'home-netops-reverse-ssh' "$TMP/systemctl-ddns.log"; then
     fail "ddns install must not enable reverse SSH"
 fi
+if grep -q 'home-netops-proxy-server' "$TMP/systemctl-ddns.log"; then
+    fail "ddns install must not enable proxy server"
+fi
+
+server_root="$TMP/server-root"
+mkdir -p "$server_root/etc" "$server_root/systemd"
+SYSTEMCTL_LOG="$TMP/systemctl-server.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_LIB_DIR="$server_root/lib/home-netops" \
+HOME_NETOPS_ETC_DIR="$server_root/etc/home-netops" \
+HOME_NETOPS_CONFIG="$server_root/etc/home-netops/home-netops.conf" \
+HOME_NETOPS_SYSTEMD_DIR="$server_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_ALLOW_NON_ROOT=1 \
+"$ROOT/install.sh" --services server --no-start
+assert_file "$server_root/systemd/home-netops-proxy-server.service"
+assert_not_file "$server_root/systemd/home-netops-aliyun-ddns.service"
+assert_not_file "$server_root/systemd/home-netops-tencent-firewall.service"
+assert_not_file "$server_root/systemd/home-netops-reverse-ssh.service"
 
 interactive_root="$TMP/interactive-root"
 mkdir -p "$interactive_root/etc" "$interactive_root/systemd"

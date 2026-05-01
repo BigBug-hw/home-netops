@@ -1,0 +1,17 @@
+[Unit]
+Description=home-netops proxy server on EasyTier network
+After=network-online.target easytier.service
+Wants=network-online.target
+Requires=easytier.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=-/etc/home-netops/home-netops.conf
+ExecStart=/usr/local/lib/home-netops/lib/proxy-server.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

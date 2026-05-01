@@ -47,6 +47,7 @@ if [[ "${HOME_NETOPS_ALLOW_NON_ROOT:-0}" != "1" && "${EUID:-$(id -u)}" -ne 0 ]];
 fi
 
 units=(
+    home-netops-proxy-server.service
     home-netops-reverse-ssh.service
     home-netops-tencent-firewall.timer
     home-netops-tencent-firewall.service

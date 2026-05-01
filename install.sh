@@ -19,8 +19,9 @@ Usage: sudo ./install.sh --services LIST [--no-start]
 
 Options:
   --services LIST
-               Comma-separated services to install: all, ddns, firewall, reverse-ssh.
-               Required for non-interactive use. reverse-ssh requires firewall.
+               Comma-separated services to install: all, ddns, firewall, reverse-ssh, server.
+               Required for non-interactive use.
+               reverse-ssh requires firewall; server requires easytier.service.
   --interactive
                Prompt for services instead of reading --services.
   --no-start   Install files and reload systemd without enabling or starting services.
@@ -72,6 +73,7 @@ enable_units=()
 scripts=(
     lib/common.sh
     lib/get-public-ip.sh
+    lib/proxy-server.sh
     lib/reverse-ssh.sh
     ddns/aliyun.sh
     firewall/tencent.sh
@@ -87,9 +89,10 @@ has_service() {
 }
 
 prompt_services() {
-    printf 'Select services to install (all, ddns, firewall, reverse-ssh).\n' >&2
-    printf 'Use comma-separated names, for example: ddns,firewall\n' >&2
+    printf 'Select services to install (all, ddns, firewall, reverse-ssh, server).\n' >&2
+    printf 'Use comma-separated names, for example: ddns,server\n' >&2
     printf 'Note: reverse-ssh requires firewall.\n' >&2
+    printf 'Note: server requires an existing easytier.service.\n' >&2
     printf 'Services: ' >&2
     read -r SERVICES
 }
@@ -114,14 +117,14 @@ parse_services() {
     fi
 
     if [[ "$SERVICES" == "all" ]]; then
-        selected_services=(ddns firewall reverse-ssh)
+        selected_services=(ddns firewall reverse-ssh server)
         return
     fi
 
     IFS=',' read -ra raw_items <<< "$SERVICES"
     for item in "${raw_items[@]}"; do
         case "$item" in
-            ddns|firewall|reverse-ssh)
+            ddns|firewall|reverse-ssh|server)
                 selected_services+=("$item")
                 ;;
             all)
@@ -160,6 +163,11 @@ select_units() {
     if has_service reverse-ssh; then
         units+=(home-netops-reverse-ssh.service)
         enable_units+=(home-netops-reverse-ssh.service)
+    fi
+
+    if has_service server; then
+        units+=(home-netops-proxy-server.service)
+        enable_units+=(home-netops-proxy-server.service)
     fi
 }
 
