@@ -19,9 +19,9 @@ Usage: sudo ./install.sh --services LIST [--no-start]
 
 Options:
   --services LIST
-               Comma-separated services to install: all, ddns, firewall, reverse-ssh, server.
+               Comma-separated services to install: all, ddns, firewall, reverse-ssh, easytier, server.
                Required for non-interactive use.
-               reverse-ssh requires firewall; server requires easytier.service.
+               reverse-ssh and easytier require firewall; server requires easytier.
   --interactive
                Prompt for services instead of reading --services.
   --no-start   Install files and reload systemd without enabling or starting services.
@@ -72,6 +72,7 @@ units=()
 enable_units=()
 scripts=(
     lib/common.sh
+    lib/easytier.sh
     lib/get-public-ip.sh
     lib/proxy-server.sh
     lib/reverse-ssh.sh
@@ -89,10 +90,10 @@ has_service() {
 }
 
 prompt_services() {
-    printf 'Select services to install (all, ddns, firewall, reverse-ssh, server).\n' >&2
-    printf 'Use comma-separated names, for example: ddns,server\n' >&2
-    printf 'Note: reverse-ssh requires firewall.\n' >&2
-    printf 'Note: server requires an existing easytier.service.\n' >&2
+    printf 'Select services to install (all, ddns, firewall, reverse-ssh, easytier, server).\n' >&2
+    printf 'Use comma-separated names, for example: firewall,easytier,server\n' >&2
+    printf 'Note: reverse-ssh and easytier require firewall.\n' >&2
+    printf 'Note: server requires easytier.\n' >&2
     printf 'Services: ' >&2
     read -r SERVICES
 }
@@ -117,14 +118,14 @@ parse_services() {
     fi
 
     if [[ "$SERVICES" == "all" ]]; then
-        selected_services=(ddns firewall reverse-ssh server)
+        selected_services=(ddns firewall reverse-ssh easytier server)
         return
     fi
 
     IFS=',' read -ra raw_items <<< "$SERVICES"
     for item in "${raw_items[@]}"; do
         case "$item" in
-            ddns|firewall|reverse-ssh|server)
+            ddns|firewall|reverse-ssh|easytier|server)
                 selected_services+=("$item")
                 ;;
             all)
@@ -147,6 +148,16 @@ parse_services() {
         echo "ERROR: reverse-ssh requires firewall. Use --services firewall,reverse-ssh." >&2
         exit 2
     fi
+
+    if has_service easytier && ! has_service firewall; then
+        echo "ERROR: easytier requires firewall. Use --services firewall,easytier." >&2
+        exit 2
+    fi
+
+    if has_service server && ! has_service easytier; then
+        echo "ERROR: server requires easytier. Use --services firewall,easytier,server." >&2
+        exit 2
+    fi
 }
 
 select_units() {
@@ -165,6 +176,11 @@ select_units() {
         enable_units+=(home-netops-reverse-ssh.service)
     fi
 
+    if has_service easytier; then
+        units+=(home-netops-easytier.service)
+        enable_units+=(home-netops-easytier.service)
+    fi
+
     if has_service server; then
         units+=(home-netops-proxy-server.service)
         enable_units+=(home-netops-proxy-server.service)
@@ -181,6 +197,13 @@ done
 install -d -m 0755 "$LIB_DIR" "$LIB_DIR/ddns" "$LIB_DIR/firewall" "$LIB_DIR/lib" "$ETC_DIR" "$SYSTEMD_DIR"
 for script in "${scripts[@]}"; do
     install -m 0755 "$SCRIPT_DIR/$script" "$LIB_DIR/$script"
+done
+for config in "$SCRIPT_DIR"/config/easytier-*.yaml; do
+    [[ -e "$config" ]] || continue
+    target="$ETC_DIR/$(basename "$config")"
+    if [[ ! -f "$target" ]]; then
+        install -m 0644 "$config" "$target"
+    fi
 done
 
 if [[ ! -f "$CONFIG_FILE" ]]; then

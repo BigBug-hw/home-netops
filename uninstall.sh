@@ -48,6 +48,7 @@ fi
 
 units=(
     home-netops-proxy-server.service
+    home-netops-easytier.service
     home-netops-reverse-ssh.service
     home-netops-tencent-firewall.timer
     home-netops-tencent-firewall.service

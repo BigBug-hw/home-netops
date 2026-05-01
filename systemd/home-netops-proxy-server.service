@@ -1,8 +1,8 @@
 [Unit]
 Description=home-netops proxy server on EasyTier network
-After=network-online.target easytier.service
+After=network-online.target home-netops-easytier.service
 Wants=network-online.target
-Requires=easytier.service
+Requires=home-netops-easytier.service
 
 [Service]
 Type=simple

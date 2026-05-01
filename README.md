@@ -5,6 +5,7 @@ Personal network automation for a home machine:
 - Aliyun DDNS keeps `home.bigbug.ren` pointed at the current public IPv4.
 - Tencent Lighthouse firewall keeps one SSH allow rule in sync with the current public IPv4.
 - Reverse SSH exposes the home SSH service through the cloud host after the firewall rule is ready.
+- EasyTier starts the configured VPN node after the firewall rule is ready.
 - Proxy server exposes SOCKS5 and HTTP proxy listeners on the EasyTier LAN.
 
 ## Layout
@@ -12,7 +13,7 @@ Personal network automation for a home machine:
 ```text
 ddns/                 Aliyun DDNS update
 firewall/             Tencent Lighthouse firewall sync
-lib/                  Shared shell helpers, public IPv4 detection, reverse SSH, and proxy tools
+lib/                  Shared shell helpers, public IPv4 detection, EasyTier, reverse SSH, and proxy tools
 install.sh            Install scripts, config example, and systemd units
 uninstall.sh          Stop services and remove installed files
 systemd/              systemd service and timer units
@@ -46,7 +47,11 @@ uv pip install tccli
 tccli auth login --browser no
 ```
 
-Proxy server needs EasyTier and `gost`. Install EasyTier as `easytier.service` first, then install `gost` somewhere stable and set `GOST_BIN` in `home-netops.conf`.
+EasyTier needs `easytier-core` installed somewhere stable. Set `EASYTIER_BIN` and `EASYTIER_CONFIG` in `home-netops.conf`.
+
+The installer copies `config/easytier-*.yaml` into `/etc/home-netops/` without overwriting existing files. `home-netops-easytier.service` starts after `home-netops-tencent-firewall.service`.
+
+Proxy server needs EasyTier and `gost`. Install `gost` somewhere stable and set `GOST_BIN` in `home-netops.conf`. The proxy server binds to `EASYTIER_LAN_IP`; when that variable is empty, it reads the `ipv4` value from `EASYTIER_CONFIG`.
 
 Example `gost` install:
 
@@ -68,6 +73,7 @@ This copies scripts into `/usr/local/lib/home-netops`, creates `/etc/home-netops
 - `home-netops-aliyun-ddns.timer`
 - `home-netops-tencent-firewall.timer`
 - `home-netops-reverse-ssh.service`
+- `home-netops-easytier.service`
 - `home-netops-proxy-server.service`
 
 Install without starting services:
@@ -82,7 +88,8 @@ Install only selected services:
 sudo ./install.sh --services ddns
 sudo ./install.sh --services firewall
 sudo ./install.sh --services firewall,reverse-ssh
-sudo ./install.sh --services server
+sudo ./install.sh --services firewall,easytier
+sudo ./install.sh --services firewall,easytier,server
 ```
 
 Interactive install:
@@ -98,7 +105,8 @@ Available service names:
 - `ddns`: installs `home-netops-aliyun-ddns.service` and `.timer`.
 - `firewall`: installs `home-netops-tencent-firewall.service` and `.timer`.
 - `reverse-ssh`: installs `home-netops-reverse-ssh.service`; it requires `firewall`.
-- `server`: installs `home-netops-proxy-server.service`; it requires an existing `easytier.service`.
+- `easytier`: installs `home-netops-easytier.service`; it requires `firewall`.
+- `server`: installs `home-netops-proxy-server.service`; it requires `easytier`.
 - `all`: installs everything, but it must still be specified explicitly.
 
 Edit config before the first real run:
@@ -119,6 +127,12 @@ Sync the Tencent firewall rule:
 
 ```bash
 sudo /usr/local/lib/home-netops/firewall/tencent.sh
+```
+
+Run the configured EasyTier node directly:
+
+```bash
+sudo /usr/local/lib/home-netops/lib/easytier.sh
 ```
 
 Control the reverse SSH tunnel:
@@ -154,7 +168,9 @@ Start from `config/home-netops.conf.example`. Important fields:
 - `REMOTE_BIND_*`, `LOCAL_TARGET_*`: reverse SSH forwarding settings.
 - `IDENTITY_FILE`: optional SSH private key path.
 - `CHECK_LOCAL_SSHD`: set to `0` to skip the local SSH port check.
-- `EASYTIER_LAN_IP`: EasyTier LAN IP to bind the proxy server on, for example `10.144.144.3`.
+- `EASYTIER_BIN`: path to `easytier-core`.
+- `EASYTIER_CONFIG`: EasyTier config file used by `home-netops-easytier.service`, for example `/etc/home-netops/easytier-home.yaml`.
+- `EASYTIER_LAN_IP`: EasyTier LAN IP to bind the proxy server on. Leave empty to read `ipv4` from `EASYTIER_CONFIG`.
 - `GOST_BIN`: path to `gost`.
 - `PROXY_SOCKS_PORT`, `PROXY_HTTP_PORT`: SOCKS5 and HTTP proxy listen ports.
 
@@ -193,12 +209,16 @@ The test suite is offline and uses mocks for `systemctl` and cloud CLIs.
 tests/run.sh
 ```
 
-## EasyTier Notes
+## EasyTier Configs
 
-EasyTier configs are kept under `config/` for manual use.
+EasyTier configs are kept under `config/` and copied into `/etc/home-netops/` during install:
 
-Example:
+- `easytier-home.yaml`
+- `easytier-ali.yaml`
+- `easytier-tencent.yaml`
+
+Manual run example:
 
 ```bash
-./easytier-linux-x86_64/easytier-core --config-file config/easytier-home.yaml
+easytier-core --config-file /etc/home-netops/easytier-home.yaml
 ```

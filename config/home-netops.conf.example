@@ -38,8 +38,12 @@ LOCAL_TARGET_PORT="22"
 IDENTITY_FILE=""
 CHECK_LOCAL_SSHD="1"
 
+# EasyTier.
+EASYTIER_BIN="easytier-core"
+EASYTIER_CONFIG="/etc/home-netops/easytier-home.yaml"
+
 # Proxy server exposed on the EasyTier LAN.
-EASYTIER_LAN_IP="10.144.144.3"
+EASYTIER_LAN_IP=""
 GOST_BIN="gost"
 PROXY_SOCKS_PORT="1080"
 PROXY_HTTP_PORT="8080"
