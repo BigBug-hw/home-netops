@@ -1,80 +1,79 @@
 # home-netops
 
-Personal network automation.
+个人网络运维脚本，用 systemd 管理 DDNS、EasyTier 组网、云防火墙同步、反向 SSH 和代理。
 
-Supported services:
+## 当前效果
 
-- `ddns`: Aliyun DNS A record update.
-- `firewall`: Tencent Lighthouse firewall rule sync.
-- `reverse-ssh`: reverse SSH tunnel; requires `firewall`.
-- `easytier`: EasyTier node.
-- `proxy-server`: SOCKS5/HTTP proxy server; requires `easytier`.
-- `proxy-client`: writes shell proxy exports that point at the proxy server.
+- `home`：更新阿里云 DNS A 记录，同步腾讯云 Lighthouse 防火墙，启动 EasyTier，并把代理环境变量写入本机用户 `~/.bashrc`。
+- `ali`：启动 EasyTier，并在 EasyTier 网络内提供 SOCKS5/HTTP 代理。
+- `tencent`：启动 EasyTier 节点。
 
-Three roles:
+服务由 `config/home-netops.json` 里的 `roles.<role>.services` 决定；安装脚本不会再用交互方式选择服务。
 
-- `home`: Aliyun DDNS, Tencent firewall sync, reverse SSH, and EasyTier.
-- `ali`: EasyTier and a SOCKS5/HTTP proxy server on the EasyTier LAN.
-- `tencent`: EasyTier only.
+## 准备
 
-## Dependencies
-
-1. Base tools:
-
-    ```bash
-    sudo apt install curl jq
-    ```
-
-2. Install the tools used by the enabled role:
-
-- `home`: `aliyun`, `uv`, `tccli`, `autossh`, `easytier-core`, and `iproute2` for the optional local SSH port check.
-- `ali`: `easytier-core` and `gost`.
-- `tencent`: `easytier-core`.
-
-Aliyun DDNS needs the Aliyun CLI:
-
-- install `aliyun`
-
-    ```bash
-    /bin/bash -c "$(curl -fsSL https://aliyuncli.alicdn.com/install.sh)"
-    ```
-
-- create RAM acount
-
-- create profile
-
-    ```bash
-    aliyun configure set \
-       --profile ddns \
-       --mode AK \
-       --region cn-beijing \
-       --access-key-id "Your AccessKeyId" \
-       --access-key-secret "Your AccessKeySecret"
-    ```
-
-Tencent firewall sync uses `TCCLI_BIN`, which defaults to `.venv/bin/tccli` under `HOME_NETOPS_APP_HOME`. If that file does not exist, `firewall/tencent.sh` installs it with `uv`:
+基础依赖：
 
 ```bash
-uv venv && uv pip install tccli
+sudo apt install curl jq
 ```
 
-Then authenticate `tccli` for the configured Lighthouse instance:
+按启用的服务安装对应工具：
+
+- `ddns`：`aliyun`
+- `firewall`：`uv`、`tccli`
+- `reverse-ssh`：`autossh`
+- `easytier`：`easytier-core`
+- `proxy-server`：`gost`
+
+阿里云 DDNS 使用 `ddns` profile：
 
 ```bash
+/bin/bash -c "$(curl -fsSL https://aliyuncli.alicdn.com/install.sh)"
+
+aliyun configure set \
+  --profile ddns \
+  --mode AK \
+  --region cn-beijing \
+  --access-key-id "Your AccessKeyId" \
+  --access-key-secret "Your AccessKeySecret"
+```
+
+腾讯云防火墙默认使用仓库目录下 `.venv/bin/tccli`。如果文件不存在，脚本会用 `uv` 安装；首次使用前需要登录：
+
+```bash
+uv venv
+uv pip install tccli
 ./.venv/bin/tccli auth login --browser no
 ```
 
-## Configuration
+## 配置
 
-Edit `config/home-netops.json`.
+编辑：
 
-- `shared` applies to every role.
-- `services.<service>` groups default variables by service.
-- `roles.<role>.overrides.<service>` overrides one service for one role.
+```bash
+config/home-netops.json
+```
 
-## Install
+配置层级：
 
-Install the current repository for a role:
+- `shared`：所有角色共用。
+- `services.<service>`：某个服务的默认变量。
+- `roles.<role>.overrides.<service>`：某个角色对某个服务的覆盖值。
+
+EasyTier 运行时配置使用被 Git 忽略的本地文件，例如：
+
+```bash
+config/easytier-home.local.yaml
+config/easytier-ali.local.yaml
+config/easytier-tencent.local.yaml
+```
+
+仓库里的 `config/easytier-*.yaml` 只当模板使用。
+
+## 安装
+
+在对应机器上安装对应角色：
 
 ```bash
 sudo ./install.sh --role home --config ./config/home-netops.json
@@ -82,69 +81,49 @@ sudo ./install.sh --role ali --config ./config/home-netops.json
 sudo ./install.sh --role tencent --config ./config/home-netops.json
 ```
 
-Install units without enabling or starting them:
+只写入 systemd unit，不启用也不启动：
 
 ```bash
 sudo ./install.sh --role home --config ./config/home-netops.json --no-start
 ```
 
-Install from a different application directory:
+仓库目录不在当前路径时指定 `--app-home`：
 
 ```bash
-sudo ./install.sh --role ali --config /opt/home-netops/config/home-netops.json --app-home /opt/home-netops
+sudo ./install.sh \
+  --role ali \
+  --config /opt/home-netops/config/home-netops.json \
+  --app-home /opt/home-netops
 ```
 
-## Check
+## 检查和运维
 
-Run a read-only check after editing config or installing units:
+安装后检查角色状态：
 
 ```bash
 ./check.sh --role home --config ./config/home-netops.json
 ```
 
-## Manual Commands
-
-Run a service entrypoint directly by setting the role, config, and app home:
-
-```bash
-export HOME_NETOPS_ROLE=home
-export HOME_NETOPS_CONFIG="$PWD/config/home-netops.json"
-export HOME_NETOPS_APP_HOME="$PWD"
-
-sudo -E ./ddns/aliyun.sh
-sudo -E ./firewall/tencent.sh
-sudo -E ./lib/reverse-ssh.sh
-sudo -E ./lib/easytier.sh
-sudo -E ./lib/proxy-server.sh
-```
-
-Control installed systemd units:
+查看 systemd 状态和日志：
 
 ```bash
 sudo systemctl status home-netops-easytier.service
 sudo journalctl -u home-netops-easytier.service -f
 ```
 
-## Proxy Client
+常用 unit：
 
-Enable `proxy-client` in a role to manage proxy exports in the invoking user's `~/.bashrc`. Under `sudo`, the target is `SUDO_USER`'s `~/.bashrc`; without `sudo`, it is the current user's `~/.bashrc`.
+- `home-netops-aliyun-ddns.timer`
+- `home-netops-tencent-firewall.timer`
+- `home-netops-reverse-ssh.service`
+- `home-netops-easytier.service`
+- `home-netops-proxy-server.service`
 
-Example role:
+## 代理客户端
 
-```json
-{
-  "roles": {
-    "client": {
-      "services": ["proxy-client"],
-      "overrides": {}
-    }
-  }
-}
-```
+启用 `proxy-client` 的角色会写入调用用户的 `~/.bashrc`：
 
-The installer writes a managed block with these variables:
-
-```bashrc
+```bash
 export ALL_PROXY=socks5://10.144.144.3:1080
 export all_proxy=socks5://10.144.144.3:1080
 export HTTP_PROXY=http://10.144.144.3:8080
@@ -153,47 +132,50 @@ export http_proxy=http://10.144.144.3:8080
 export https_proxy=http://10.144.144.3:8080
 ```
 
-`PROXY_SERVER_IP` is the proxy server's EasyTier IP. `uninstall.sh` removes only the home-netops managed block and leaves other `.bashrc` content unchanged.
+在 `sudo` 下安装时，目标是 `SUDO_USER` 的 `~/.bashrc`；不用 `sudo` 时，目标是当前用户的 `~/.bashrc`。
 
-## EasyTier Secret Rotation
+脚本只管理 `# home-netops proxy-client start` 和 `# home-netops proxy-client end` 之间的块，不会改动其它内容。
 
-The committed `config/easytier-*.yaml` files are templates. Runtime config uses ignored `config/easytier-*.local.yaml` files so secret rotation does not dirty the Git worktree.
+## EasyTier 密钥轮换
 
-Create a host map from the example:
+先复制并填写主机映射：
 
 ```bash
 cp config/deploy-hosts.example.json config/deploy-hosts.json
 ```
 
-Edit `config/deploy-hosts.json` with the SSH endpoint, app directory, and EasyTier config path for each role. Keep `easytier_config` pointed at the ignored `.local.yaml` runtime file.
-
-Generate a new network secret and X25519 keypair for every role without touching remote hosts:
+本地生成新配置，不上传：
 
 ```bash
 tools/rotate-easytier-secrets.sh --dry-run --output-dir /tmp/home-netops-rotate
 ```
 
-Apply the rotation over SSH:
+上传并重启远端 EasyTier：
 
 ```bash
 tools/rotate-easytier-secrets.sh --apply --hosts config/deploy-hosts.json
 ```
 
-The apply flow uploads each rendered config as a staged file, installs it with mode `0600`, atomically replaces the active config, restarts `tencent`, then `ali`, then `home`, and rolls back from the remote backup if a restart fails.
+注意：`deploy-hosts.json` 里的 `easytier_config` 应指向 `.local.yaml` 运行时文件。应用轮换时会按 `tencent -> ali -> home` 的顺序重启，失败会尝试恢复远端备份。
 
-## Uninstall
+## 卸载
 
-Remove generated home-netops systemd units and the proxy-client `.bashrc` block:
+移除 home-netops 生成的 systemd unit 和代理客户端 `.bashrc` 托管块：
 
 ```bash
 sudo ./uninstall.sh --yes
 ```
 
-This does not remove the repository, JSON config, or EasyTier configs.
+卸载不会删除仓库、JSON 配置或 EasyTier 配置文件。
 
-## Test
+## 注意事项
 
-The test suite is offline and uses mocks for `systemctl` and cloud CLIs.
+- `install.sh` 和 `uninstall.sh` 默认需要 root。
+- `reverse-ssh` 必须和 `firewall` 在同一个角色里启用。
+- `proxy-server` 必须和 `easytier` 在同一个角色里启用。
+- `proxy-client` 不创建 systemd unit，只修改托管的 shell 配置块。
+- 修改配置或安装后，优先跑 `check.sh` 再看服务日志。
+- 离线测试入口是：
 
 ```bash
 tests/run.sh
