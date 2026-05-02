@@ -1,0 +1,34 @@
+services:
+  - name: http-proxy
+    addr: "127.0.0.1:8080"
+    bypass: proxy-whitelist
+    handler:
+      type: http
+      chain: proxy-chain
+    listener:
+      type: tcp
+
+chains:
+  - name: proxy-chain
+    hops:
+      - name: proxy-hop
+        nodes:
+          - name: proxy-node
+            addr: "10.144.144.3:1080"
+            connector:
+              type: socks5
+            dialer:
+              type: tcp
+
+bypasses:
+  - name: proxy-whitelist
+    whitelist: true
+    matchers:
+      - "*.github.com"
+      - "github.com"
+      - "*.google.com.hk"
+      - "google.com.hk"
+      - "*.openai.com"
+      - "openai.com"
+      - "*.chatgpt.com"
+      - "chatgpt.com"
