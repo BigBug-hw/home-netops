@@ -15,7 +15,7 @@
       "ALIYUN_TTL": "600"
     },
     "firewall": {
-      "TCCLI_BIN": "tccli",
+      "TCCLI_BIN": ".venv/bin/tccli",
       "TENCENT_INSTANCE_ID": "lhins-33uux3hm",
       "TENCENT_REGION": "ap-beijing",
       "TENCENT_FIREWALL_PROTOCOL": "TCP",

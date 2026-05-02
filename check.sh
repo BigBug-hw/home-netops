@@ -147,7 +147,8 @@ if has_item ddns "${HOME_NETOPS_SERVICES[@]}"; then
 fi
 
 if has_item firewall "${HOME_NETOPS_SERVICES[@]}"; then
-    check_cmd "${TCCLI_BIN:-tccli}"
+    TCCLI_BIN="$(resolve_command_path "${TCCLI_BIN:-${HOME_NETOPS_APP_HOME}/.venv/bin/tccli}")"
+    check_cmd "$TCCLI_BIN"
     [[ -n "${TENCENT_INSTANCE_ID:-}" ]] || fail_check "TENCENT_INSTANCE_ID is empty"
     [[ -n "${TENCENT_REGION:-}" ]] || fail_check "TENCENT_REGION is empty"
 fi

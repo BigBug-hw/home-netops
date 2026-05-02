@@ -121,3 +121,19 @@ resolve_app_path() {
             ;;
     esac
 }
+
+resolve_command_path() {
+    local command_path="$1"
+
+    case "$command_path" in
+        /*)
+            printf '%s\n' "$command_path"
+            ;;
+        */*)
+            resolve_app_path "$command_path"
+            ;;
+        *)
+            printf '%s\n' "$command_path"
+            ;;
+    esac
+}

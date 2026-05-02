@@ -31,7 +31,7 @@ sudo apt install curl jq
 
 Install the tools used by the enabled role:
 
-- `home`: `aliyun`, `tccli`, `autossh`, `easytier-core`, and `iproute2` for the optional local SSH port check.
+- `home`: `aliyun`, `uv`, `tccli`, `autossh`, `easytier-core`, and `iproute2` for the optional local SSH port check.
 - `ali`: `easytier-core` and `gost`.
 - `tencent`: `easytier-core`.
 
@@ -41,10 +41,16 @@ Aliyun DDNS needs the Aliyun CLI profile configured with `ALIYUN_PROFILE`.
 aliyun configure --profile ddns
 ```
 
-Tencent firewall sync needs `tccli` authenticated for the configured Lighthouse instance.
+Tencent firewall sync uses `TCCLI_BIN`, which defaults to `.venv/bin/tccli` under `HOME_NETOPS_APP_HOME`. If that file does not exist, `firewall/tencent.sh` installs it with `uv`:
 
 ```bash
-tccli auth login --browser no
+uv venv && uv pip install tccli
+```
+
+Then authenticate `tccli` for the configured Lighthouse instance:
+
+```bash
+./.venv/bin/tccli auth login --browser no
 ```
 
 ## Configuration

@@ -92,7 +92,11 @@ cat > "$mockbin/tccli" <<'MOCK'
 printf '%s\n' "$*" >> "$TCCLI_LOG"
 case "$*" in
     *DescribeFirewallRules*)
-        printf '{"FirewallRuleSet":[]}\n'
+        if [[ "${TCCLI_MODE:-}" == "stale" ]]; then
+            printf '{"FirewallRuleSet":[{"Protocol":"TCP","Port":"22","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"test-rule"}]}\n'
+        else
+            printf '{"FirewallRuleSet":[]}\n'
+        fi
         ;;
     *CreateFirewallRules*)
         printf '{"RequestId":"ok"}\n'
@@ -212,6 +216,9 @@ if PATH="$mockbin:$PATH" \
 else
     fail "disabled service config must not be loaded"
 fi
+
+resolved_tccli="$(HOME_NETOPS_APP_HOME="$ROOT" bash -c '. "$1/lib/common.sh"; resolve_command_path ".venv/bin/tccli"' _ "$ROOT")"
+[[ "$resolved_tccli" == "$ROOT/.venv/bin/tccli" ]] || fail "relative command paths must resolve from app home"
 
 EASYTIER_LOG="$TMP/easytier.log" \
 PATH="$mockbin:$PATH" \
@@ -380,9 +387,27 @@ GET_IP_SCRIPT="$mock_get_ip" \
 "$ROOT/firewall/tencent.sh"
 assert_grep 'DescribeFirewallRules' "$TMP/tccli.log" "Tencent script must describe existing rules"
 assert_grep 'CreateFirewallRules' "$TMP/tccli.log" "Tencent script must create missing rule"
-assert_grep '203.0.113.7/32' "$TMP/tccli.log" "Tencent script must use current public IP CIDR"
+assert_grep '203.0.113.7' "$TMP/tccli.log" "Tencent script must use current public IP"
+if grep -q '203.0.113.7/32' "$TMP/tccli.log"; then
+    fail "Tencent script must not append /32 to single IP rules"
+fi
 assert_grep 'try-restart home-netops-reverse-ssh.service' "$TMP/systemctl-firewall.log" \
     "Tencent script must restart reverse SSH when firewall changes"
+
+TCCLI_LOG="$TMP/tccli-stale.log" \
+SYSTEMCTL_LOG="$TMP/systemctl-firewall-stale.log" \
+TCCLI_MODE="stale" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_CONFIG="$test_config" \
+HOME_NETOPS_ROLE="home" \
+HOME_NETOPS_APP_HOME="$ROOT" \
+GET_IP_SCRIPT="$mock_get_ip" \
+"$ROOT/firewall/tencent.sh"
+assert_grep 'DeleteFirewallRules' "$TMP/tccli-stale.log" "Tencent script must delete stale rules"
+if grep 'DeleteFirewallRules' "$TMP/tccli-stale.log" | grep -q 'Ipv6CidrBlock'; then
+    fail "Tencent stale-rule delete must omit empty Ipv6CidrBlock"
+fi
+assert_grep 'CreateFirewallRules' "$TMP/tccli-stale.log" "Tencent script must create replacement rule after stale delete"
 
 ALIYUN_LOG="$TMP/aliyun.log" \
 CURL_LOG="$TMP/curl-ddns.log" \

@@ -14,11 +14,27 @@ TENCENT_FIREWALL_PROTOCOL="${TENCENT_FIREWALL_PROTOCOL:-TCP}"
 TENCENT_FIREWALL_PORT="${TENCENT_FIREWALL_PORT:-22}"
 TENCENT_FIREWALL_ACTION="${TENCENT_FIREWALL_ACTION:-ACCEPT}"
 TENCENT_FIREWALL_RULE_DESC="${TENCENT_FIREWALL_RULE_DESC:-auto-wsl-home-ssh}"
-TCCLI_BIN="${TCCLI_BIN:-tccli}"
+TCCLI_BIN="${TCCLI_BIN:-${HOME_NETOPS_APP_HOME:-$ROOT_DIR}/.venv/bin/tccli}"
+TCCLI_BIN="$(resolve_command_path "$TCCLI_BIN")"
 GET_IP_SCRIPT="${GET_IP_SCRIPT:-$ROOT_DIR/lib/get-public-ip.sh}"
 GET_IP_SCRIPT="$(resolve_app_path "$GET_IP_SCRIPT")"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 RESTART_REVERSE_AFTER_FIREWALL_CHANGE="${RESTART_REVERSE_AFTER_FIREWALL_CHANGE:-1}"
+
+ensure_tccli() {
+    if [[ -x "$TCCLI_BIN" ]]; then
+        return 0
+    fi
+
+    case "$TCCLI_BIN" in
+        */*)
+            need_cmd uv
+            [[ -n "${HOME_NETOPS_APP_HOME:-}" ]] || die "HOME_NETOPS_APP_HOME must be set to install tccli into app venv"
+            log "TCCLI_BIN not found, installing tccli into ${HOME_NETOPS_APP_HOME}/.venv"
+            (cd "$HOME_NETOPS_APP_HOME" && uv venv && uv pip install tccli)
+            ;;
+    esac
+}
 
 describe_rules() {
     "$TCCLI_BIN" lighthouse DescribeFirewallRules \
@@ -58,7 +74,21 @@ create_rule() {
 delete_rule_json() {
     local rule="$1"
     local rule_json
-    rule_json="$(jq -nc --argjson rule "$rule" '[$rule]')"
+    rule_json="$(jq -nc --argjson rule "$rule" '
+        [$rule
+         | {
+             Protocol,
+             Port,
+             CidrBlock,
+             Action,
+             FirewallRuleDescription
+           }
+         | if (($rule.Ipv6CidrBlock // "") != "") then
+             . + {Ipv6CidrBlock: $rule.Ipv6CidrBlock}
+           else
+             .
+           end]
+    ')"
 
     "$TCCLI_BIN" lighthouse DeleteFirewallRules \
         --region "$TENCENT_REGION" \
@@ -77,14 +107,15 @@ restart_reverse_ssh_if_needed() {
 }
 
 main() {
-    need_cmd "$TCCLI_BIN"
     need_cmd jq
+    ensure_tccli
+    need_cmd "$TCCLI_BIN"
     [[ -x "$GET_IP_SCRIPT" ]] || die "GET_IP_SCRIPT not executable: $GET_IP_SCRIPT"
 
     local current_ip cidr resp matched exact_count stale_count changed
     changed=0
     current_ip="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')" || die "failed to get public IPv4"
-    cidr="${current_ip}/32"
+    cidr="${current_ip}"
 
     log "syncing Tencent firewall rule desc=$TENCENT_FIREWALL_RULE_DESC cidr=$cidr"
 
