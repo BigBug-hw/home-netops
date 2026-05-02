@@ -20,7 +20,7 @@ rpc_portal_whitelist = ["127.0.0.1/32"]
 
 [network_identity]
 network_name = "net.bigbug.ren"
-network_secret = "gAYaYvQ96YajxsCK5umr9KnUkqBE-y7u0GKyzxSmNNE"
+network_secret = "REPLACE_WITH_ROTATED_NETWORK_SECRET"
 
 [flags]
 need_p2p = true
@@ -28,5 +28,5 @@ private_mode = true
 
 [secure_mode]
 enabled = true
-local_private_key = "XYdCSQT17m2aGv+1cyo6Sz44LDUnX8yc0NvGufrYP/E="
-local_public_key = "2vLTYzBlMBr0X910w+LqGC0GHqRE30DjWybOGwMRC20="
+local_private_key = "REPLACE_WITH_ROTATED_TENCENT_PRIVATE_KEY"
+local_public_key = "REPLACE_WITH_ROTATED_TENCENT_PUBLIC_KEY"

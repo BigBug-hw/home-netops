@@ -190,6 +190,32 @@ export https_proxy=http://10.144.144.3:8080
 
 `PROXY_SERVER_IP` is the proxy server's EasyTier IP. `uninstall.sh` removes only the home-netops managed block and leaves other `.bashrc` content unchanged.
 
+## EasyTier Secret Rotation
+
+The committed EasyTier config files are templates. Keep real node configs in ignored local files or on the deployed hosts.
+
+Create a host map from the example:
+
+```bash
+cp config/deploy-hosts.example.json config/deploy-hosts.json
+```
+
+Edit `config/deploy-hosts.json` with the SSH endpoint, app directory, and EasyTier config path for each role.
+
+Generate a new network secret and X25519 keypair for every role without touching remote hosts:
+
+```bash
+tools/rotate-easytier-secrets.sh --dry-run --output-dir /tmp/home-netops-rotate
+```
+
+Apply the rotation over SSH:
+
+```bash
+tools/rotate-easytier-secrets.sh --apply --hosts config/deploy-hosts.json
+```
+
+The apply flow uploads each rendered config as a staged file, installs it with mode `0600`, atomically replaces the active config, restarts `tencent`, then `ali`, then `home`, and rolls back from the remote backup if a restart fails.
+
 ## Uninstall
 
 Remove generated home-netops systemd units and the proxy-client `.bashrc` block:

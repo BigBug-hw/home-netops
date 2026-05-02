@@ -32,6 +32,7 @@ scripts=(
     lib/get-public-ip.sh
     lib/proxy-server.sh
     lib/reverse-ssh.sh
+    tools/rotate-easytier-secrets.sh
     uninstall.sh
 )
 
@@ -107,6 +108,26 @@ case "$*" in
 esac
 MOCK
 chmod +x "$mockbin/tccli"
+cat > "$mockbin/ssh" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "ssh $*" >> "$SSH_LOG"
+if [[ -n "${SSH_FAIL_RESTART_HOST:-}" ]] \
+    && [[ "$*" == *"$SSH_FAIL_RESTART_HOST"* ]] \
+    && [[ "$*" == *"sudo systemctl restart home-netops-easytier.service"* ]] \
+    && [[ "$*" != *"sudo cp -p"* ]]; then
+    exit 1
+fi
+MOCK
+chmod +x "$mockbin/ssh"
+cat > "$mockbin/scp" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "scp $*" >> "$SCP_LOG"
+MOCK
+chmod +x "$mockbin/scp"
+
+toml_value() {
+    awk -F '"' -v key="$2" '$0 ~ "^[[:space:]]*" key "[[:space:]]*=" {print $2; exit}' "$1"
+}
 
 test_config="$TMP/home-netops.json"
 cat > "$test_config" <<CONF
@@ -192,6 +213,91 @@ cat > "$test_config" <<CONF
   }
 }
 CONF
+
+rotate_out="$TMP/rotate-out"
+PATH="$mockbin:$PATH" \
+"$ROOT/tools/rotate-easytier-secrets.sh" --dry-run --output-dir "$rotate_out" >/tmp/home-netops-rotate-dry-run.out
+assert_file "$rotate_out/easytier-home.yaml"
+assert_file "$rotate_out/easytier-ali.yaml"
+assert_file "$rotate_out/easytier-tencent.yaml"
+home_secret="$(toml_value "$rotate_out/easytier-home.yaml" network_secret)"
+ali_secret="$(toml_value "$rotate_out/easytier-ali.yaml" network_secret)"
+tencent_secret="$(toml_value "$rotate_out/easytier-tencent.yaml" network_secret)"
+[[ "$home_secret" == "$ali_secret" && "$ali_secret" == "$tencent_secret" ]] || \
+    fail "rotated configs must share one network_secret"
+home_private="$(toml_value "$rotate_out/easytier-home.yaml" local_private_key)"
+ali_private="$(toml_value "$rotate_out/easytier-ali.yaml" local_private_key)"
+tencent_private="$(toml_value "$rotate_out/easytier-tencent.yaml" local_private_key)"
+[[ "$home_private" != "$ali_private" && "$home_private" != "$tencent_private" && "$ali_private" != "$tencent_private" ]] || \
+    fail "rotated roles must get distinct private keys"
+tencent_public="$(toml_value "$rotate_out/easytier-tencent.yaml" local_public_key)"
+home_peer="$(toml_value "$rotate_out/easytier-home.yaml" peer_public_key)"
+ali_peer="$(toml_value "$rotate_out/easytier-ali.yaml" peer_public_key)"
+[[ "$home_peer" == "$tencent_public" && "$ali_peer" == "$tencent_public" ]] || \
+    fail "home and ali must pin the rotated tencent public key"
+if grep -R 'REPLACE_WITH_ROTATED' "$rotate_out" >/dev/null 2>&1; then
+    fail "rotated configs must not contain placeholder secrets"
+fi
+
+deploy_hosts="$TMP/deploy-hosts.json"
+cat > "$deploy_hosts" <<CONF
+{
+  "roles": {
+    "home": {
+      "ssh_host": "home.example",
+      "ssh_user": "root",
+      "ssh_port": "2201",
+      "app_home": "/srv/home-netops",
+      "easytier_config": "config/easytier-home.yaml"
+    },
+    "ali": {
+      "ssh_host": "ali.example",
+      "ssh_user": "root",
+      "ssh_port": "2202",
+      "app_home": "/srv/home-netops",
+      "easytier_config": "config/easytier-ali.yaml"
+    },
+    "tencent": {
+      "ssh_host": "tencent.example",
+      "ssh_user": "root",
+      "ssh_port": "2203",
+      "app_home": "/srv/home-netops",
+      "easytier_config": "config/easytier-tencent.yaml"
+    }
+  }
+}
+CONF
+SSH_LOG="$TMP/ssh-rotate.log" \
+SCP_LOG="$TMP/scp-rotate.log" \
+PATH="$mockbin:$PATH" \
+"$ROOT/tools/rotate-easytier-secrets.sh" --apply --hosts "$deploy_hosts" --output-dir "$TMP/rotate-apply" >/tmp/home-netops-rotate-apply.out
+assert_grep 'scp -P 2201' "$TMP/scp-rotate.log" "rotate apply must upload home config"
+assert_grep 'scp -P 2202' "$TMP/scp-rotate.log" "rotate apply must upload ali config"
+assert_grep 'scp -P 2203' "$TMP/scp-rotate.log" "rotate apply must upload tencent config"
+assert_grep 'sudo install -m 0600' "$TMP/ssh-rotate.log" "rotate apply must stage configs with restricted permissions"
+restart_lines="$(grep -n 'sudo systemctl restart home-netops-easytier.service' "$TMP/ssh-rotate.log" | cut -d: -f1 | tr '\n' ' ')"
+set -- $restart_lines
+[[ $# -eq 3 ]] || fail "rotate apply must restart exactly three EasyTier units"
+first_restart="$(sed -n "${1}p" "$TMP/ssh-rotate.log")"
+second_restart="$(sed -n "${2}p" "$TMP/ssh-rotate.log")"
+third_restart="$(sed -n "${3}p" "$TMP/ssh-rotate.log")"
+case "$first_restart:$second_restart:$third_restart" in
+    *tencent.example*:*ali.example*:*home.example*)
+        ;;
+    *)
+        fail "rotate apply must restart tencent, then ali, then home"
+        ;;
+esac
+SSH_LOG="$TMP/ssh-rotate-rollback.log" \
+SCP_LOG="$TMP/scp-rotate-rollback.log" \
+SSH_FAIL_RESTART_HOST="ali.example" \
+PATH="$mockbin:$PATH" \
+"$ROOT/tools/rotate-easytier-secrets.sh" --apply --hosts "$deploy_hosts" --output-dir "$TMP/rotate-rollback" >/tmp/home-netops-rotate-rollback.out 2>&1 && \
+    fail "rotate apply must fail when a remote restart fails"
+assert_grep 'rolling back committed configs' /tmp/home-netops-rotate-rollback.out \
+    "rotate apply must report rollback on restart failure"
+assert_grep 'sudo cp -p' "$TMP/ssh-rotate-rollback.log" \
+    "rotate apply must restore backups during rollback"
 
 CURL_LOG="$TMP/curl.log" \
 PATH="$mockbin:$PATH" \

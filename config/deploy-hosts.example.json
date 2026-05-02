@@ -1,0 +1,25 @@
+{
+  "roles": {
+    "home": {
+      "ssh_host": "127.0.0.1",
+      "ssh_user": "root",
+      "ssh_port": "22",
+      "app_home": "/home/renyq/software/home-netops",
+      "easytier_config": "config/easytier-home.yaml"
+    },
+    "ali": {
+      "ssh_host": "47.88.100.190",
+      "ssh_user": "root",
+      "ssh_port": "22",
+      "app_home": "/home/renyq/software/home-netops",
+      "easytier_config": "config/easytier-ali.yaml"
+    },
+    "tencent": {
+      "ssh_host": "82.156.118.129",
+      "ssh_user": "root",
+      "ssh_port": "22",
+      "app_home": "/home/bigbug/software/home-netops",
+      "easytier_config": "config/easytier-tencent.yaml"
+    }
+  }
+}

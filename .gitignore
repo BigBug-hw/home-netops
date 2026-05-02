@@ -2,3 +2,5 @@
 *.log
 *.pid
 .omx/
+config/deploy-hosts.json
+config/*.local.yaml
