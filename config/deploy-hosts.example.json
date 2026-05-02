@@ -11,7 +11,7 @@
       "ssh_host": "47.88.100.190",
       "ssh_user": "root",
       "ssh_port": "22",
-      "app_home": "/home/renyq/software/home-netops",
+      "app_home": "/home/bigbug/software/home-netops",
       "easytier_config": "config/easytier-ali.yaml"
     },
     "tencent": {
