@@ -54,7 +54,7 @@
   },
   "roles": {
     "home": {
-      "services": ["ddns", "firewall", "reverse-ssh", "easytier", "proxy-client"],
+      "services": ["ddns", "firewall", "easytier", "proxy-client"],
       "overrides": {
         "easytier": {
           "EASYTIER_CONFIG": "config/easytier-home.yaml"
