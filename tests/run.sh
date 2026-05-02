@@ -275,6 +275,7 @@ assert_grep 'scp -P 2201' "$TMP/scp-rotate.log" "rotate apply must upload home c
 assert_grep 'scp -P 2202' "$TMP/scp-rotate.log" "rotate apply must upload ali config"
 assert_grep 'scp -P 2203' "$TMP/scp-rotate.log" "rotate apply must upload tencent config"
 assert_grep 'sudo install -m 0600' "$TMP/ssh-rotate.log" "rotate apply must stage configs with restricted permissions"
+assert_grep 'sudo rm -f' "$TMP/ssh-rotate.log" "rotate apply must delete per-run backups after successful restart"
 restart_lines="$(grep -n 'sudo systemctl restart home-netops-easytier.service' "$TMP/ssh-rotate.log" | cut -d: -f1 | tr '\n' ' ')"
 set -- $restart_lines
 [[ $# -eq 3 ]] || fail "rotate apply must restart exactly three EasyTier units"

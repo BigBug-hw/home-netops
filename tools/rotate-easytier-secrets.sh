@@ -219,6 +219,11 @@ remote_rollback() {
     ssh_for_role "$role" "if sudo test -f $(shell_quote "$backup"); then sudo cp -p $(shell_quote "$backup") $(shell_quote "$remote_config") && sudo systemctl restart home-netops-easytier.service; fi" || true
 }
 
+remote_cleanup_backup() {
+    local role="$1" backup="$2"
+    ssh_for_role "$role" "sudo rm -f $(shell_quote "$backup")"
+}
+
 need_cmd jq
 need_cmd openssl
 need_cmd base64
@@ -327,5 +332,10 @@ if [[ "$restart_failed" == "1" ]]; then
     done
     exit 1
 fi
+
+for role in "${committed[@]}"; do
+    echo "cleaning backup role=$role"
+    remote_cleanup_backup "$role" "${REMOTE_BACKUPS[$role]}"
+done
 
 echo "EasyTier secret rotation complete"
