@@ -1,7 +1,8 @@
+# gost v3 配置文件：白名单目标走上游 SOCKS5，其他目标走本机网络
+
 services:
   - name: http-proxy
     addr: "127.0.0.1:8080"
-    bypass: proxy-whitelist
     handler:
       type: http
       chain: proxy-chain
@@ -12,6 +13,7 @@ chains:
   - name: proxy-chain
     hops:
       - name: proxy-hop
+        bypass: proxy-whitelist
         nodes:
           - name: proxy-node
             addr: "10.144.144.3:1080"
