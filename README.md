@@ -1,45 +1,56 @@
 # home-netops
 
-Personal network automation for three roles:
+Personal network automation.
+
+Supported services:
+
+- `ddns`: Aliyun DNS A record update.
+- `firewall`: Tencent Lighthouse firewall rule sync.
+- `reverse-ssh`: reverse SSH tunnel; requires `firewall`.
+- `easytier`: EasyTier node.
+- `proxy-server`: SOCKS5/HTTP proxy server; requires `easytier`.
+- `proxy-client`: writes shell proxy exports that point at the proxy server.
+
+Three roles:
 
 - `home`: Aliyun DDNS, Tencent firewall sync, reverse SSH, and EasyTier.
 - `ali`: EasyTier and a SOCKS5/HTTP proxy server on the EasyTier LAN.
 - `tencent`: EasyTier only.
 
-The repository directory is the application directory. Installation does not copy scripts or config into `/usr/local` or `/etc`; it only installs the selected role's systemd units.
-
-## Layout
-
-```text
-check.sh              Read-only dependency, config, and systemd status checks
-config/               JSON role config and EasyTier configs
-ddns/                 Aliyun DDNS update
-firewall/             Tencent Lighthouse firewall sync
-install.sh            Role-driven systemd unit installer
-lib/                  Shared helpers and service entrypoints
-tests/run.sh          Offline regression checks with command mocks
-uninstall.sh          Remove generated home-netops systemd units
-```
-
 ## Dependencies
 
-Base tools:
+1. Base tools:
 
-```bash
-sudo apt install curl jq
-```
+    ```bash
+    sudo apt install curl jq
+    ```
 
-Install the tools used by the enabled role:
+2. Install the tools used by the enabled role:
 
 - `home`: `aliyun`, `uv`, `tccli`, `autossh`, `easytier-core`, and `iproute2` for the optional local SSH port check.
 - `ali`: `easytier-core` and `gost`.
 - `tencent`: `easytier-core`.
 
-Aliyun DDNS needs the Aliyun CLI profile configured with `ALIYUN_PROFILE`.
+Aliyun DDNS needs the Aliyun CLI:
 
-```bash
-aliyun configure --profile ddns
-```
+- install `aliyun`
+
+    ```bash
+    /bin/bash -c "$(curl -fsSL https://aliyuncli.alicdn.com/install.sh)"
+    ```
+
+- create RAM acount
+
+- create profile
+
+    ```bash
+    aliyun configure set \
+       --profile ddns \
+       --mode AK \
+       --region cn-beijing \
+       --access-key-id "Your AccessKeyId" \
+       --access-key-secret "Your AccessKeySecret"
+    ```
 
 Tencent firewall sync uses `TCCLI_BIN`, which defaults to `.venv/bin/tccli` under `HOME_NETOPS_APP_HOME`. If that file does not exist, `firewall/tencent.sh` installs it with `uv`:
 
@@ -57,51 +68,9 @@ Then authenticate `tccli` for the configured Lighthouse instance:
 
 Edit `config/home-netops.json`.
 
-```json
-{
-  "shared": {
-    "PUBLIC_IP_TIMEOUT": "8"
-  },
-  "services": {
-    "easytier": {
-      "EASYTIER_BIN": "easytier-core"
-    },
-    "proxy-server": {
-      "GOST_BIN": "gost",
-      "PROXY_SOCKS_PORT": "1080",
-      "PROXY_HTTP_PORT": "8080"
-    },
-    "proxy-client": {
-      "PROXY_SERVER_IP": "10.144.144.3",
-      "PROXY_SOCKS_PORT": "1080",
-      "PROXY_HTTP_PORT": "8080"
-    }
-  },
-  "roles": {
-    "ali": {
-      "services": ["easytier", "proxy-server"],
-      "overrides": {
-        "easytier": {
-          "EASYTIER_CONFIG": "config/easytier-ali.local.yaml"
-        }
-      }
-    }
-  }
-}
-```
-
-`shared` applies to every role. `services.<service>` groups default variables by service. `roles.<role>.overrides.<service>` overrides one service for one role. Explicit environment variables override JSON values at runtime.
-
-Supported services:
-
-- `ddns`: Aliyun DNS A record update.
-- `firewall`: Tencent Lighthouse firewall rule sync.
-- `reverse-ssh`: reverse SSH tunnel; requires `firewall`.
-- `easytier`: EasyTier node.
-- `proxy-server`: SOCKS5/HTTP proxy server; requires `easytier`.
-- `proxy-client`: writes shell proxy exports that point at the proxy server.
-
-Relative paths in JSON, such as `config/easytier-ali.local.yaml`, are resolved from `HOME_NETOPS_APP_HOME`, which the installer sets to the repository path.
+- `shared` applies to every role.
+- `services.<service>` groups default variables by service.
+- `roles.<role>.overrides.<service>` overrides one service for one role.
 
 ## Install
 
@@ -125,8 +94,6 @@ Install from a different application directory:
 sudo ./install.sh --role ali --config /opt/home-netops/config/home-netops.json --app-home /opt/home-netops
 ```
 
-The old interactive and `--services` installation modes are intentionally removed. The role config is the only source of enabled services.
-
 ## Check
 
 Run a read-only check after editing config or installing units:
@@ -134,8 +101,6 @@ Run a read-only check after editing config or installing units:
 ```bash
 ./check.sh --role home --config ./config/home-netops.json
 ```
-
-The check validates JSON structure, service dependencies, required commands, important config values, EasyTier config paths, and systemd unit status.
 
 ## Manual Commands
 
