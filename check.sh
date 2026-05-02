@@ -170,19 +170,21 @@ if has_item proxy-server "${HOME_NETOPS_SERVICES[@]}"; then
 fi
 
 if has_item proxy-client "${HOME_NETOPS_SERVICES[@]}"; then
+    check_cmd "${GOST_BIN:-gost}"
     [[ -n "${PROXY_SERVER_IP:-}" ]] || fail_check "PROXY_SERVER_IP is empty"
     [[ -n "${PROXY_SOCKS_PORT:-}" ]] || fail_check "PROXY_SOCKS_PORT is empty"
     [[ -n "${PROXY_HTTP_PORT:-}" ]] || fail_check "PROXY_HTTP_PORT is empty"
+    PROXY_CLIENT_LISTEN_ADDR="${PROXY_CLIENT_LISTEN_ADDR:-127.0.0.1}"
     bashrc="$(proxy_client_bashrc_path)"
     check_file "$bashrc"
-    if [[ -n "${PROXY_SERVER_IP:-}" && -f "$bashrc" ]] \
+    if [[ -f "$bashrc" ]] \
         && grep -q '^# home-netops proxy-client start$' "$bashrc" \
-        && grep -q "ALL_PROXY=socks5://${PROXY_SERVER_IP}:${PROXY_SOCKS_PORT}" "$bashrc" \
-        && grep -q "all_proxy=socks5://${PROXY_SERVER_IP}:${PROXY_SOCKS_PORT}" "$bashrc" \
-        && grep -q "HTTP_PROXY=http://${PROXY_SERVER_IP}:${PROXY_HTTP_PORT}" "$bashrc" \
-        && grep -q "HTTPS_PROXY=http://${PROXY_SERVER_IP}:${PROXY_HTTP_PORT}" "$bashrc" \
-        && grep -q "http_proxy=http://${PROXY_SERVER_IP}:${PROXY_HTTP_PORT}" "$bashrc" \
-        && grep -q "https_proxy=http://${PROXY_SERVER_IP}:${PROXY_HTTP_PORT}" "$bashrc"; then
+        && grep -q "ALL_PROXY=http://${PROXY_CLIENT_LISTEN_ADDR}:${PROXY_HTTP_PORT}" "$bashrc" \
+        && grep -q "all_proxy=http://${PROXY_CLIENT_LISTEN_ADDR}:${PROXY_HTTP_PORT}" "$bashrc" \
+        && grep -q "HTTP_PROXY=http://${PROXY_CLIENT_LISTEN_ADDR}:${PROXY_HTTP_PORT}" "$bashrc" \
+        && grep -q "HTTPS_PROXY=http://${PROXY_CLIENT_LISTEN_ADDR}:${PROXY_HTTP_PORT}" "$bashrc" \
+        && grep -q "http_proxy=http://${PROXY_CLIENT_LISTEN_ADDR}:${PROXY_HTTP_PORT}" "$bashrc" \
+        && grep -q "https_proxy=http://${PROXY_CLIENT_LISTEN_ADDR}:${PROXY_HTTP_PORT}" "$bashrc"; then
         pass "proxy-client bashrc block"
     else
         fail_check "proxy-client bashrc block missing or incomplete"
@@ -205,6 +207,9 @@ for service in "${HOME_NETOPS_SERVICES[@]}"; do
             ;;
         proxy-server)
             check_unit home-netops-proxy-server.service
+            ;;
+        proxy-client)
+            check_unit home-netops-proxy-client.service
             ;;
     esac
 done

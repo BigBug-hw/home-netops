@@ -59,6 +59,7 @@ if [[ "$YES" != "1" && -t 0 ]]; then
 fi
 
 units=(
+    home-netops-proxy-client.service
     home-netops-proxy-server.service
     home-netops-easytier.service
     home-netops-reverse-ssh.service

@@ -30,6 +30,7 @@ scripts=(
     lib/common.sh
     lib/easytier.sh
     lib/get-public-ip.sh
+    lib/proxy-client.sh
     lib/proxy-server.sh
     lib/reverse-ssh.sh
     tools/rotate-easytier-secrets.sh
@@ -176,6 +177,8 @@ cat > "$test_config" <<CONF
       "PROXY_SERVER_ONLY_MARKER": "must-not-load-for-tencent"
     },
     "proxy-client": {
+      "GOST_BIN": "gost",
+      "PROXY_CLIENT_LISTEN_ADDR": "127.0.0.1",
       "PROXY_SERVER_IP": "10.144.144.3",
       "PROXY_SOCKS_PORT": "1080",
       "PROXY_HTTP_PORT": "8080"
@@ -434,15 +437,17 @@ HOME_NETOPS_BASHRC="$client_bashrc" \
 "$ROOT/install.sh" --role client --config "$test_config" --app-home "$ROOT" --no-start
 assert_grep '# user bashrc line' "$client_bashrc" "proxy-client install must preserve existing bashrc content"
 assert_grep '# home-netops proxy-client start' "$client_bashrc" "proxy-client install must write managed start marker"
-assert_grep 'export ALL_PROXY=socks5://10.144.144.3:1080' "$client_bashrc" "proxy-client must write ALL_PROXY"
-assert_grep 'export all_proxy=socks5://10.144.144.3:1080' "$client_bashrc" "proxy-client must write all_proxy"
-assert_grep 'export HTTP_PROXY=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write HTTP_PROXY"
-assert_grep 'export HTTPS_PROXY=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write HTTPS_PROXY"
-assert_grep 'export http_proxy=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write http_proxy"
-assert_grep 'export https_proxy=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write https_proxy"
-assert_not_file "$client_root/systemd/home-netops-proxy-client.service"
+assert_grep 'export ALL_PROXY=http://127.0.0.1:8080' "$client_bashrc" "proxy-client must write local ALL_PROXY"
+assert_grep 'export all_proxy=http://127.0.0.1:8080' "$client_bashrc" "proxy-client must write local all_proxy"
+assert_grep 'export HTTP_PROXY=http://127.0.0.1:8080' "$client_bashrc" "proxy-client must write local HTTP_PROXY"
+assert_grep 'export HTTPS_PROXY=http://127.0.0.1:8080' "$client_bashrc" "proxy-client must write local HTTPS_PROXY"
+assert_grep 'export http_proxy=http://127.0.0.1:8080' "$client_bashrc" "proxy-client must write local http_proxy"
+assert_grep 'export https_proxy=http://127.0.0.1:8080' "$client_bashrc" "proxy-client must write local https_proxy"
+assert_file "$client_root/systemd/home-netops-proxy-client.service"
+assert_grep "ExecStart=$ROOT/lib/proxy-client.sh" "$client_root/systemd/home-netops-proxy-client.service" \
+    "proxy-client unit must run proxy-client entrypoint"
 if grep -q 'enable --now' "$TMP/systemctl-client.log"; then
-    fail "proxy-client install must not enable systemd units"
+    fail "proxy-client --no-start install must not enable systemd units"
 fi
 
 SYSTEMD_DIR="$client_root/systemd" \
@@ -538,6 +543,15 @@ HOME_NETOPS_BASHRC="$client_bashrc" \
 assert_grep 'proxy-client bashrc block' /tmp/home-netops-check-client.out \
     "check must validate proxy-client bashrc block"
 
+GOST_LOG="$TMP/gost-client.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_CONFIG="$test_config" \
+HOME_NETOPS_ROLE="client" \
+HOME_NETOPS_APP_HOME="$ROOT" \
+"$ROOT/lib/proxy-client.sh"
+assert_grep '-L http://127.0.0.1:8080 -F socks5://10.144.144.3:1080' "$TMP/gost-client.log" \
+    "proxy-client must forward local HTTP proxy to EasyTier SOCKS proxy"
+
 missing_tool_bin="$TMP/missing-tool-bin"
 mkdir -p "$missing_tool_bin"
 ln -s "$(command -v jq)" "$missing_tool_bin/jq"
@@ -614,6 +628,8 @@ assert_not_file "$ali_root/systemd/home-netops-easytier.service"
 assert_not_file "$ali_root/systemd/home-netops-proxy-server.service"
 assert_grep 'disable --now home-netops-easytier.service' "$TMP/systemctl-uninstall.log" \
     "uninstall must stop EasyTier"
+assert_grep 'disable --now home-netops-proxy-client.service' "$TMP/systemctl-uninstall.log" \
+    "uninstall must stop proxy-client"
 assert_grep '# user bashrc line' "$client_bashrc" "uninstall must preserve user bashrc content"
 if grep -q 'home-netops proxy-client' "$client_bashrc"; then
     fail "uninstall must remove proxy-client managed bashrc block"

@@ -158,16 +158,16 @@ proxy_client_bashrc_path() {
 }
 
 proxy_client_block() {
-    local proxy_server_ip="$1" socks_port="$2" http_port="$3"
+    local listen_addr="$1" http_port="$2"
 
     cat <<BLOCK
 # home-netops proxy-client start
-export ALL_PROXY=socks5://${proxy_server_ip}:${socks_port}
-export all_proxy=socks5://${proxy_server_ip}:${socks_port}
-export HTTP_PROXY=http://${proxy_server_ip}:${http_port}
-export HTTPS_PROXY=http://${proxy_server_ip}:${http_port}
-export http_proxy=http://${proxy_server_ip}:${http_port}
-export https_proxy=http://${proxy_server_ip}:${http_port}
+export ALL_PROXY=http://${listen_addr}:${http_port}
+export all_proxy=http://${listen_addr}:${http_port}
+export HTTP_PROXY=http://${listen_addr}:${http_port}
+export HTTPS_PROXY=http://${listen_addr}:${http_port}
+export http_proxy=http://${listen_addr}:${http_port}
+export https_proxy=http://${listen_addr}:${http_port}
 # home-netops proxy-client end
 BLOCK
 }

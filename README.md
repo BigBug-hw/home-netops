@@ -4,7 +4,7 @@
 
 ## 当前效果
 
-- `home`：更新阿里云 DNS A 记录，同步腾讯云 Lighthouse 防火墙，启动 EasyTier，并把代理环境变量写入本机用户 `~/.bashrc`。
+- `home`：更新阿里云 DNS A 记录，同步腾讯云 Lighthouse 防火墙，启动 EasyTier，并在 WSL 本机提供 HTTP 代理给 Windows 使用。
 - `ali`：启动 EasyTier，并在 EasyTier 网络内提供 SOCKS5/HTTP 代理。
 - `tencent`：启动 EasyTier 节点。
 
@@ -25,6 +25,7 @@ sudo apt install curl jq
 - `reverse-ssh`：`autossh`
 - `easytier`：`easytier-core`
 - `proxy-server`：`gost`
+- `proxy-client`：`gost`
 
 阿里云 DDNS 使用 `ddns` profile：
 
@@ -118,18 +119,31 @@ sudo journalctl -u home-netops-easytier.service -f
 - `home-netops-reverse-ssh.service`
 - `home-netops-easytier.service`
 - `home-netops-proxy-server.service`
+- `home-netops-proxy-client.service`
 
 ## 代理客户端
 
-启用 `proxy-client` 的角色会写入调用用户的 `~/.bashrc`：
+启用 `proxy-client` 的角色会启动本机 HTTP 转发：
 
 ```bash
-export ALL_PROXY=socks5://10.144.144.3:1080
-export all_proxy=socks5://10.144.144.3:1080
-export HTTP_PROXY=http://10.144.144.3:8080
-export HTTPS_PROXY=http://10.144.144.3:8080
-export http_proxy=http://10.144.144.3:8080
-export https_proxy=http://10.144.144.3:8080
+gost -L http://127.0.0.1:8080 -F socks5://10.144.144.3:1080
+```
+
+效果是把 EasyTier 内网里的 SOCKS5 代理转成 WSL 本机的 HTTP 代理。Windows 侧可使用：
+
+```bash
+http://127.0.0.1:8080
+```
+
+安装时也会把调用用户的 `~/.bashrc` 指向这个本机代理：
+
+```bash
+export ALL_PROXY=http://127.0.0.1:8080
+export all_proxy=http://127.0.0.1:8080
+export HTTP_PROXY=http://127.0.0.1:8080
+export HTTPS_PROXY=http://127.0.0.1:8080
+export http_proxy=http://127.0.0.1:8080
+export https_proxy=http://127.0.0.1:8080
 ```
 
 在 `sudo` 下安装时，目标是 `SUDO_USER` 的 `~/.bashrc`；不用 `sudo` 时，目标是当前用户的 `~/.bashrc`。
@@ -173,7 +187,7 @@ sudo ./uninstall.sh --yes
 - `install.sh` 和 `uninstall.sh` 默认需要 root。
 - `reverse-ssh` 必须和 `firewall` 在同一个角色里启用。
 - `proxy-server` 必须和 `easytier` 在同一个角色里启用。
-- `proxy-client` 不创建 systemd unit，只修改托管的 shell 配置块。
+- `proxy-client` 默认只监听 `127.0.0.1:8080`，不暴露到局域网。
 - 修改配置或安装后，优先跑 `check.sh` 再看服务日志。
 - 离线测试入口是：
 

@@ -47,6 +47,8 @@
       "PROXY_HTTP_PORT": "8080"
     },
     "proxy-client": {
+      "GOST_BIN": "gost",
+      "PROXY_CLIENT_LISTEN_ADDR": "127.0.0.1",
       "PROXY_SERVER_IP": "10.144.144.3",
       "PROXY_SOCKS_PORT": "1080",
       "PROXY_HTTP_PORT": "8080"

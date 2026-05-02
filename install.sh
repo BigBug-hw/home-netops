@@ -104,6 +104,7 @@ scripts=(
     lib/common.sh
     lib/easytier.sh
     lib/get-public-ip.sh
+    lib/proxy-client.sh
     lib/proxy-server.sh
     lib/reverse-ssh.sh
     ddns/aliyun.sh
@@ -136,6 +137,7 @@ unit_for_service() {
             printf '%s\n' home-netops-proxy-server.service
             ;;
         proxy-client)
+            printf '%s\n' home-netops-proxy-client.service
             ;;
     esac
 }
@@ -158,6 +160,7 @@ enable_unit_for_service() {
             printf '%s\n' home-netops-proxy-server.service
             ;;
         proxy-client)
+            printf '%s\n' home-netops-proxy-client.service
             ;;
     esac
 }
@@ -280,6 +283,11 @@ write_units_for_service() {
                 home-netops-easytier.service
             ;;
         proxy-client)
+            write_service_unit \
+                home-netops-proxy-client.service \
+                "home-netops local proxy client" \
+                "$APP_HOME/lib/proxy-client.sh" \
+                simple
             ;;
     esac
 }
@@ -290,6 +298,7 @@ install_proxy_client() {
     [[ -n "${PROXY_SERVER_IP:-}" ]] || die "PROXY_SERVER_IP must be set for proxy-client"
     PROXY_SOCKS_PORT="${PROXY_SOCKS_PORT:-1080}"
     PROXY_HTTP_PORT="${PROXY_HTTP_PORT:-8080}"
+    PROXY_CLIENT_LISTEN_ADDR="${PROXY_CLIENT_LISTEN_ADDR:-127.0.0.1}"
 
     bashrc="$(proxy_client_bashrc_path)"
     install -d -m 0755 "$(dirname -- "$bashrc")"
@@ -297,7 +306,7 @@ install_proxy_client() {
     remove_proxy_client_block "$bashrc"
     {
         printf '\n'
-        proxy_client_block "$PROXY_SERVER_IP" "$PROXY_SOCKS_PORT" "$PROXY_HTTP_PORT"
+        proxy_client_block "$PROXY_CLIENT_LISTEN_ADDR" "$PROXY_HTTP_PORT"
     } >> "$bashrc"
     echo "home-netops proxy-client configured: $bashrc"
 }
