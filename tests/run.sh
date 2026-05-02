@@ -549,8 +549,8 @@ HOME_NETOPS_CONFIG="$test_config" \
 HOME_NETOPS_ROLE="client" \
 HOME_NETOPS_APP_HOME="$ROOT" \
 "$ROOT/lib/proxy-client.sh"
-assert_grep '-L http://127.0.0.1:8080 -F socks5://10.144.144.3:1080' "$TMP/gost-client.log" \
-    "proxy-client must forward local HTTP proxy to EasyTier SOCKS proxy"
+assert_grep "-C $ROOT/config/gost.yaml" "$TMP/gost-client.log" \
+    "proxy-client must start gost with the project config file"
 
 missing_tool_bin="$TMP/missing-tool-bin"
 mkdir -p "$missing_tool_bin"
