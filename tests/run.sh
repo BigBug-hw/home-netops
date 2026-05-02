@@ -248,21 +248,21 @@ cat > "$deploy_hosts" <<CONF
       "ssh_user": "root",
       "ssh_port": "2201",
       "app_home": "/srv/home-netops",
-      "easytier_config": "config/easytier-home.yaml"
+      "easytier_config": "config/easytier-home.local.yaml"
     },
     "ali": {
       "ssh_host": "ali.example",
       "ssh_user": "root",
       "ssh_port": "2202",
       "app_home": "/srv/home-netops",
-      "easytier_config": "config/easytier-ali.yaml"
+      "easytier_config": "config/easytier-ali.local.yaml"
     },
     "tencent": {
       "ssh_host": "tencent.example",
       "ssh_user": "root",
       "ssh_port": "2203",
       "app_home": "/srv/home-netops",
-      "easytier_config": "config/easytier-tencent.yaml"
+      "easytier_config": "config/easytier-tencent.local.yaml"
     }
   }
 }

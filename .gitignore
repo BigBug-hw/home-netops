@@ -4,3 +4,4 @@
 .omx/
 config/deploy-hosts.json
 config/*.local.yaml
+config/*.yaml.bak.*

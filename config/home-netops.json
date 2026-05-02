@@ -57,7 +57,7 @@
       "services": ["ddns", "firewall", "easytier", "proxy-client"],
       "overrides": {
         "easytier": {
-          "EASYTIER_CONFIG": "config/easytier-home.yaml"
+          "EASYTIER_CONFIG": "config/easytier-home.local.yaml"
         }
       }
     },
@@ -65,7 +65,7 @@
       "services": ["easytier", "proxy-server"],
       "overrides": {
         "easytier": {
-          "EASYTIER_CONFIG": "config/easytier-ali.yaml"
+          "EASYTIER_CONFIG": "config/easytier-ali.local.yaml"
         }
       }
     },
@@ -73,7 +73,7 @@
       "services": ["easytier"],
       "overrides": {
         "easytier": {
-          "EASYTIER_CONFIG": "config/easytier-tencent.yaml"
+          "EASYTIER_CONFIG": "config/easytier-tencent.local.yaml"
         }
       }
     }

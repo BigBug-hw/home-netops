@@ -82,7 +82,7 @@ Edit `config/home-netops.json`.
       "services": ["easytier", "proxy-server"],
       "overrides": {
         "easytier": {
-          "EASYTIER_CONFIG": "config/easytier-ali.yaml"
+          "EASYTIER_CONFIG": "config/easytier-ali.local.yaml"
         }
       }
     }
@@ -101,7 +101,7 @@ Supported services:
 - `proxy-server`: SOCKS5/HTTP proxy server; requires `easytier`.
 - `proxy-client`: writes shell proxy exports that point at the proxy server.
 
-Relative paths in JSON, such as `config/easytier-ali.yaml`, are resolved from `HOME_NETOPS_APP_HOME`, which the installer sets to the repository path.
+Relative paths in JSON, such as `config/easytier-ali.local.yaml`, are resolved from `HOME_NETOPS_APP_HOME`, which the installer sets to the repository path.
 
 ## Install
 
@@ -192,7 +192,7 @@ export https_proxy=http://10.144.144.3:8080
 
 ## EasyTier Secret Rotation
 
-The committed EasyTier config files are templates. Keep real node configs in ignored local files or on the deployed hosts.
+The committed `config/easytier-*.yaml` files are templates. Runtime config uses ignored `config/easytier-*.local.yaml` files so secret rotation does not dirty the Git worktree.
 
 Create a host map from the example:
 
@@ -200,7 +200,7 @@ Create a host map from the example:
 cp config/deploy-hosts.example.json config/deploy-hosts.json
 ```
 
-Edit `config/deploy-hosts.json` with the SSH endpoint, app directory, and EasyTier config path for each role.
+Edit `config/deploy-hosts.json` with the SSH endpoint, app directory, and EasyTier config path for each role. Keep `easytier_config` pointed at the ignored `.local.yaml` runtime file.
 
 Generate a new network secret and X25519 keypair for every role without touching remote hosts:
 
