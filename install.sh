@@ -97,7 +97,8 @@ CONFIG="$(cd -- "$(dirname -- "$CONFIG")" && pwd)/$(basename -- "$CONFIG")"
 
 HOME_NETOPS_ROLE="$ROLE"
 HOME_NETOPS_CONFIG="$CONFIG"
-load_role_services "$CONFIG" "$ROLE"
+HOME_NETOPS_APP_HOME="$APP_HOME"
+load_config
 
 scripts=(
     lib/common.sh
@@ -134,6 +135,8 @@ unit_for_service() {
         proxy-server)
             printf '%s\n' home-netops-proxy-server.service
             ;;
+        proxy-client)
+            ;;
     esac
 }
 
@@ -153,6 +156,8 @@ enable_unit_for_service() {
             ;;
         proxy-server)
             printf '%s\n' home-netops-proxy-server.service
+            ;;
+        proxy-client)
             ;;
     esac
 }
@@ -274,7 +279,27 @@ write_units_for_service() {
                 home-netops-easytier.service \
                 home-netops-easytier.service
             ;;
+        proxy-client)
+            ;;
     esac
+}
+
+install_proxy_client() {
+    local bashrc
+
+    [[ -n "${PROXY_SERVER_IP:-}" ]] || die "PROXY_SERVER_IP must be set for proxy-client"
+    PROXY_SOCKS_PORT="${PROXY_SOCKS_PORT:-1080}"
+    PROXY_HTTP_PORT="${PROXY_HTTP_PORT:-8080}"
+
+    bashrc="$(proxy_client_bashrc_path)"
+    install -d -m 0755 "$(dirname -- "$bashrc")"
+    touch "$bashrc"
+    remove_proxy_client_block "$bashrc"
+    {
+        printf '\n'
+        proxy_client_block "$PROXY_SERVER_IP" "$PROXY_SOCKS_PORT" "$PROXY_HTTP_PORT"
+    } >> "$bashrc"
+    echo "home-netops proxy-client configured: $bashrc"
 }
 
 install -d -m 0755 "$SYSTEMD_DIR"
@@ -290,6 +315,10 @@ for service in "${HOME_NETOPS_SERVICES[@]}"; do
         enable_units+=("$unit")
     done < <(enable_unit_for_service "$service")
 done
+
+if has_item proxy-client "${HOME_NETOPS_SERVICES[@]}"; then
+    install_proxy_client
+fi
 
 "$SYSTEMCTL" daemon-reload
 

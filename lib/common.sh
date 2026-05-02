@@ -32,7 +32,7 @@ json_role_exists() {
 
 validate_service_name() {
     case "$1" in
-        ddns|firewall|reverse-ssh|easytier|proxy-server)
+        ddns|firewall|reverse-ssh|easytier|proxy-server|proxy-client)
             return 0
             ;;
         *)
@@ -136,4 +136,52 @@ resolve_command_path() {
             printf '%s\n' "$command_path"
             ;;
     esac
+}
+
+proxy_client_bashrc_path() {
+    if [[ -n "${HOME_NETOPS_BASHRC:-}" ]]; then
+        printf '%s\n' "$HOME_NETOPS_BASHRC"
+        return
+    fi
+
+    local user home_dir
+    user="${SUDO_USER:-}"
+    if [[ -n "$user" && "$user" != "root" ]] && command -v getent >/dev/null 2>&1; then
+        home_dir="$(getent passwd "$user" | awk -F: '{print $6}')"
+        if [[ -n "$home_dir" ]]; then
+            printf '%s/.bashrc\n' "$home_dir"
+            return
+        fi
+    fi
+
+    printf '%s/.bashrc\n' "${HOME:?HOME must be set}"
+}
+
+proxy_client_block() {
+    local proxy_server_ip="$1" socks_port="$2" http_port="$3"
+
+    cat <<BLOCK
+# home-netops proxy-client start
+export ALL_PROXY=socks5://${proxy_server_ip}:${socks_port}
+export all_proxy=socks5://${proxy_server_ip}:${socks_port}
+export HTTP_PROXY=http://${proxy_server_ip}:${http_port}
+export HTTPS_PROXY=http://${proxy_server_ip}:${http_port}
+export http_proxy=http://${proxy_server_ip}:${http_port}
+export https_proxy=http://${proxy_server_ip}:${http_port}
+# home-netops proxy-client end
+BLOCK
+}
+
+remove_proxy_client_block() {
+    local bashrc="$1" tmp
+
+    [[ -f "$bashrc" ]] || return 0
+    tmp="$(mktemp)"
+    awk '
+        /^# home-netops proxy-client start$/ {skip = 1; next}
+        /^# home-netops proxy-client end$/ {skip = 0; next}
+        !skip {print}
+    ' "$bashrc" > "$tmp"
+    cat "$tmp" > "$bashrc"
+    rm -f "$tmp"
 }

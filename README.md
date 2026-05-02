@@ -70,6 +70,11 @@ Edit `config/home-netops.json`.
       "GOST_BIN": "gost",
       "PROXY_SOCKS_PORT": "1080",
       "PROXY_HTTP_PORT": "8080"
+    },
+    "proxy-client": {
+      "PROXY_SERVER_IP": "10.144.144.3",
+      "PROXY_SOCKS_PORT": "1080",
+      "PROXY_HTTP_PORT": "8080"
     }
   },
   "roles": {
@@ -94,6 +99,7 @@ Supported services:
 - `reverse-ssh`: reverse SSH tunnel; requires `firewall`.
 - `easytier`: EasyTier node.
 - `proxy-server`: SOCKS5/HTTP proxy server; requires `easytier`.
+- `proxy-client`: writes shell proxy exports that point at the proxy server.
 
 Relative paths in JSON, such as `config/easytier-ali.yaml`, are resolved from `HOME_NETOPS_APP_HOME`, which the installer sets to the repository path.
 
@@ -156,7 +162,22 @@ sudo journalctl -u home-netops-easytier.service -f
 
 ## Proxy Client
 
-Point clients at the EasyTier LAN IP configured on the proxy server:
+Enable `proxy-client` in a role to manage proxy exports in the invoking user's `~/.bashrc`. Under `sudo`, the target is `SUDO_USER`'s `~/.bashrc`; without `sudo`, it is the current user's `~/.bashrc`.
+
+Example role:
+
+```json
+{
+  "roles": {
+    "client": {
+      "services": ["proxy-client"],
+      "overrides": {}
+    }
+  }
+}
+```
+
+The installer writes a managed block with these variables:
 
 ```bashrc
 export ALL_PROXY=socks5://10.144.144.3:1080
@@ -167,9 +188,11 @@ export http_proxy=http://10.144.144.3:8080
 export https_proxy=http://10.144.144.3:8080
 ```
 
+`PROXY_SERVER_IP` is the proxy server's EasyTier IP. `uninstall.sh` removes only the home-netops managed block and leaves other `.bashrc` content unchanged.
+
 ## Uninstall
 
-Remove generated home-netops systemd units:
+Remove generated home-netops systemd units and the proxy-client `.bashrc` block:
 
 ```bash
 sudo ./uninstall.sh --yes

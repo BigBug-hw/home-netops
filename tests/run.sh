@@ -153,6 +153,11 @@ cat > "$test_config" <<CONF
       "PROXY_SOCKS_PORT": "1080",
       "PROXY_HTTP_PORT": "8080",
       "PROXY_SERVER_ONLY_MARKER": "must-not-load-for-tencent"
+    },
+    "proxy-client": {
+      "PROXY_SERVER_IP": "10.144.144.3",
+      "PROXY_SOCKS_PORT": "1080",
+      "PROXY_HTTP_PORT": "8080"
     }
   },
   "roles": {
@@ -179,6 +184,10 @@ cat > "$test_config" <<CONF
           "EASYTIER_CONFIG": "config/easytier-tencent.yaml"
         }
       }
+    },
+    "client": {
+      "services": ["proxy-client"],
+      "overrides": {}
     }
   }
 }
@@ -304,6 +313,42 @@ assert_file "$tencent_root/systemd/home-netops-easytier.service"
 assert_not_file "$tencent_root/systemd/home-netops-proxy-server.service"
 assert_not_file "$tencent_root/systemd/home-netops-tencent-firewall.service"
 
+client_root="$TMP/client-root"
+client_bashrc="$TMP/client-home/.bashrc"
+mkdir -p "$client_root/systemd" "$(dirname "$client_bashrc")"
+printf '%s\n' '# user bashrc line' > "$client_bashrc"
+SYSTEMD_DIR="$client_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-client.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$client_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_ALLOW_NON_ROOT=1 \
+HOME_NETOPS_BASHRC="$client_bashrc" \
+"$ROOT/install.sh" --role client --config "$test_config" --app-home "$ROOT" --no-start
+assert_grep '# user bashrc line' "$client_bashrc" "proxy-client install must preserve existing bashrc content"
+assert_grep '# home-netops proxy-client start' "$client_bashrc" "proxy-client install must write managed start marker"
+assert_grep 'export ALL_PROXY=socks5://10.144.144.3:1080' "$client_bashrc" "proxy-client must write ALL_PROXY"
+assert_grep 'export all_proxy=socks5://10.144.144.3:1080' "$client_bashrc" "proxy-client must write all_proxy"
+assert_grep 'export HTTP_PROXY=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write HTTP_PROXY"
+assert_grep 'export HTTPS_PROXY=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write HTTPS_PROXY"
+assert_grep 'export http_proxy=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write http_proxy"
+assert_grep 'export https_proxy=http://10.144.144.3:8080' "$client_bashrc" "proxy-client must write https_proxy"
+assert_not_file "$client_root/systemd/home-netops-proxy-client.service"
+if grep -q 'enable --now' "$TMP/systemctl-client.log"; then
+    fail "proxy-client install must not enable systemd units"
+fi
+
+SYSTEMD_DIR="$client_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-client-2.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$client_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_ALLOW_NON_ROOT=1 \
+HOME_NETOPS_BASHRC="$client_bashrc" \
+"$ROOT/install.sh" --role client --config "$test_config" --app-home "$ROOT" --no-start
+marker_count="$(grep -c '^# home-netops proxy-client start$' "$client_bashrc")"
+[[ "$marker_count" == "1" ]] || fail "proxy-client install must replace the managed block instead of appending duplicates"
+
 if HOME_NETOPS_ALLOW_NON_ROOT=1 "$ROOT/install.sh" --services all --no-start >/dev/null 2>&1; then
     fail "--services must not be supported"
 fi
@@ -346,6 +391,27 @@ if HOME_NETOPS_ALLOW_NON_ROOT=1 "$ROOT/install.sh" --role bad --config "$bad_ser
     fail "unknown service must fail"
 fi
 
+bad_proxy_client_config="$TMP/bad-proxy-client.json"
+cat > "$bad_proxy_client_config" <<'CONF'
+{
+  "services": {
+    "proxy-client": {
+      "PROXY_SOCKS_PORT": "1080",
+      "PROXY_HTTP_PORT": "8080"
+    }
+  },
+  "roles": {
+    "bad": {
+      "services": ["proxy-client"],
+      "overrides": {}
+    }
+  }
+}
+CONF
+if HOME_NETOPS_ALLOW_NON_ROOT=1 HOME_NETOPS_BASHRC="$TMP/bad-client.bashrc" "$ROOT/install.sh" --role bad --config "$bad_proxy_client_config" --app-home "$ROOT" --no-start >/dev/null 2>&1; then
+    fail "proxy-client without PROXY_SERVER_IP must fail"
+fi
+
 SYSTEMD_DIR="$ali_root/systemd" \
 SYSTEMCTL_LOG="$TMP/systemctl-check.log" \
 PATH="$mockbin:$PATH" \
@@ -354,6 +420,16 @@ HOME_NETOPS_SYSTEMCTL="systemctl" \
 "$ROOT/check.sh" --role ali --config "$test_config" --app-home "$ROOT" >/tmp/home-netops-check.out
 assert_grep 'home-netops check passed: role=ali services=easytier proxy-server' /tmp/home-netops-check.out \
     "check must pass for installed ali role"
+
+SYSTEMD_DIR="$client_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-check-client.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$client_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_BASHRC="$client_bashrc" \
+"$ROOT/check.sh" --role client --config "$test_config" --app-home "$ROOT" >/tmp/home-netops-check-client.out
+assert_grep 'proxy-client bashrc block' /tmp/home-netops-check-client.out \
+    "check must validate proxy-client bashrc block"
 
 missing_tool_bin="$TMP/missing-tool-bin"
 mkdir -p "$missing_tool_bin"
@@ -425,11 +501,16 @@ PATH="$mockbin:$PATH" \
 HOME_NETOPS_SYSTEMD_DIR="$ali_root/systemd" \
 HOME_NETOPS_SYSTEMCTL="systemctl" \
 HOME_NETOPS_ALLOW_NON_ROOT=1 \
+HOME_NETOPS_BASHRC="$client_bashrc" \
 "$ROOT/uninstall.sh" --yes
 assert_not_file "$ali_root/systemd/home-netops-easytier.service"
 assert_not_file "$ali_root/systemd/home-netops-proxy-server.service"
 assert_grep 'disable --now home-netops-easytier.service' "$TMP/systemctl-uninstall.log" \
     "uninstall must stop EasyTier"
+assert_grep '# user bashrc line' "$client_bashrc" "uninstall must preserve user bashrc content"
+if grep -q 'home-netops proxy-client' "$client_bashrc"; then
+    fail "uninstall must remove proxy-client managed bashrc block"
+fi
 
 if HOME_NETOPS_ALLOW_NON_ROOT=1 "$ROOT/uninstall.sh" --purge --yes >/dev/null 2>&1; then
     fail "--purge must not be supported"

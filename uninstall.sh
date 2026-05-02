@@ -42,6 +42,10 @@ if [[ "${HOME_NETOPS_ALLOW_NON_ROOT:-0}" != "1" && "${EUID:-$(id -u)}" -ne 0 ]];
     exit 1
 fi
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/common.sh"
+
 if [[ "$YES" != "1" && -t 0 ]]; then
     read -r -p "Remove home-netops systemd units from $SYSTEMD_DIR? [y/N] " answer
     case "$answer" in
@@ -74,4 +78,7 @@ done
 
 "$SYSTEMCTL" daemon-reload
 
-echo "home-netops systemd units removed"
+bashrc="$(proxy_client_bashrc_path)"
+remove_proxy_client_block "$bashrc"
+
+echo "home-netops systemd units and proxy-client shell config removed"

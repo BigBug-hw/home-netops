@@ -45,11 +45,16 @@
       "EASYTIER_LAN_IP": "",
       "PROXY_SOCKS_PORT": "1080",
       "PROXY_HTTP_PORT": "8080"
+    },
+    "proxy-client": {
+      "PROXY_SERVER_IP": "10.144.144.3",
+      "PROXY_SOCKS_PORT": "1080",
+      "PROXY_HTTP_PORT": "8080"
     }
   },
   "roles": {
     "home": {
-      "services": ["ddns", "firewall", "reverse-ssh", "easytier"],
+      "services": ["ddns", "firewall", "reverse-ssh", "easytier", "proxy-client"],
       "overrides": {
         "easytier": {
           "EASYTIER_CONFIG": "config/easytier-home.yaml"
