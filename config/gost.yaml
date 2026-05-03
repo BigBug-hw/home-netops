@@ -61,3 +61,5 @@ bypasses:
       - ".intercom.io"
       - ".intercomcdn.com"
       - "js.stripe.com"
+
+      - "rustdesk.com"
