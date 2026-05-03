@@ -120,20 +120,32 @@ for script in "${scripts[@]}"; do
     bash -n "$APP_HOME/$script"
 done
 
-firewall_provider() {
-    printf '%s\n' "${FIREWALL_PROVIDER:-tencent}"
+firewall_provider_for_service() {
+    case "$1" in
+        aliyun-firewall)
+            printf '%s\n' aliyun
+            ;;
+        tencent-firewall)
+            printf '%s\n' tencent
+            ;;
+        firewall)
+            printf '%s\n' "${FIREWALL_PROVIDER:-tencent}"
+            ;;
+    esac
 }
 
 firewall_service_unit() {
-    printf 'home-netops-%s-firewall.service\n' "$(firewall_provider)"
+    printf 'home-netops-%s-firewall.service\n' "$(firewall_provider_for_service "$1")"
 }
 
 firewall_timer_unit() {
-    printf 'home-netops-%s-firewall.timer\n' "$(firewall_provider)"
+    printf 'home-netops-%s-firewall.timer\n' "$(firewall_provider_for_service "$1")"
 }
 
 firewall_script() {
-    case "$(firewall_provider)" in
+    local provider
+    provider="$(firewall_provider_for_service "$1")"
+    case "$provider" in
         aliyun)
             printf '%s\n' "$APP_HOME/firewall/aliyun.sh"
             ;;
@@ -141,9 +153,20 @@ firewall_script() {
             printf '%s\n' "$APP_HOME/firewall/tencent.sh"
             ;;
         *)
-            die "unsupported FIREWALL_PROVIDER: $(firewall_provider)"
+            die "unsupported firewall provider for service $1: $provider"
             ;;
     esac
+}
+
+firewall_dependency_units() {
+    local service
+    for service in "${HOME_NETOPS_SERVICES[@]}"; do
+        case "$service" in
+            firewall|tencent-firewall|aliyun-firewall)
+                firewall_service_unit "$service"
+                ;;
+        esac
+    done
 }
 
 unit_for_service() {
@@ -151,8 +174,8 @@ unit_for_service() {
         ddns)
             printf '%s\n' home-netops-aliyun-ddns.service home-netops-aliyun-ddns.timer
             ;;
-        firewall)
-            printf '%s\n' "$(firewall_service_unit)" "$(firewall_timer_unit)"
+        firewall|tencent-firewall|aliyun-firewall)
+            printf '%s\n' "$(firewall_service_unit "$1")" "$(firewall_timer_unit "$1")"
             ;;
         reverse-ssh)
             printf '%s\n' home-netops-reverse-ssh.service
@@ -174,8 +197,8 @@ enable_unit_for_service() {
         ddns)
             printf '%s\n' home-netops-aliyun-ddns.timer
             ;;
-        firewall)
-            printf '%s\n' "$(firewall_timer_unit)"
+        firewall|tencent-firewall|aliyun-firewall)
+            printf '%s\n' "$(firewall_timer_unit "$1")"
             ;;
         reverse-ssh)
             printf '%s\n' home-netops-reverse-ssh.service
@@ -250,6 +273,7 @@ UNIT
 
 write_units_for_service() {
     local service="$1"
+    local firewall_units
 
     case "$service" in
         ddns)
@@ -263,35 +287,37 @@ write_units_for_service() {
                 "Run home-netops Aliyun DDNS update periodically" \
                 home-netops-aliyun-ddns.service
             ;;
-        firewall)
+        firewall|tencent-firewall|aliyun-firewall)
             write_service_unit \
-                "$(firewall_service_unit)" \
-                "home-netops $(firewall_provider) firewall update" \
-                "$(firewall_script)" \
+                "$(firewall_service_unit "$service")" \
+                "home-netops $(firewall_provider_for_service "$service") firewall update" \
+                "$(firewall_script "$service")" \
                 oneshot
             write_timer_unit \
-                "$(firewall_timer_unit)" \
-                "Run home-netops $(firewall_provider) firewall update periodically" \
-                "$(firewall_service_unit)"
+                "$(firewall_timer_unit "$service")" \
+                "Run home-netops $(firewall_provider_for_service "$service") firewall update periodically" \
+                "$(firewall_service_unit "$service")"
             ;;
         reverse-ssh)
+            firewall_units="$(firewall_dependency_units | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
             write_service_unit \
                 home-netops-reverse-ssh.service \
                 "home-netops reverse SSH tunnel" \
                 "$APP_HOME/lib/reverse-ssh.sh" \
                 simple \
-                "$(firewall_service_unit)" \
-                "$(firewall_service_unit)"
+                "$firewall_units" \
+                "$firewall_units"
             ;;
         easytier)
-            if has_item firewall "${HOME_NETOPS_SERVICES[@]}"; then
+            if has_firewall_service "${HOME_NETOPS_SERVICES[@]}"; then
+                firewall_units="$(firewall_dependency_units | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
                 write_service_unit \
                     home-netops-easytier.service \
                     "home-netops EasyTier node" \
                     "$APP_HOME/lib/easytier.sh" \
                     simple \
-                    "$(firewall_service_unit)" \
-                    "$(firewall_service_unit)"
+                    "$firewall_units" \
+                    "$firewall_units"
             else
                 write_service_unit \
                     home-netops-easytier.service \

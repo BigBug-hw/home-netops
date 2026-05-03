@@ -21,7 +21,8 @@ sudo apt install curl jq
 按启用的服务安装对应工具：
 
 - `ddns`：`aliyun`
-- `firewall`：`uv`、`tccli`
+- `tencent-firewall`：`uv`、`tccli`
+- `aliyun-firewall`：`aliyun`
 - `reverse-ssh`：`autossh`
 - `easytier`：`easytier-core`
 - `proxy-server`：`gost`
@@ -62,7 +63,19 @@ config/home-netops.json
 - `services.<service>`：某个服务的默认变量。
 - `roles.<role>.overrides.<service>`：某个角色对某个服务的覆盖值。
 
-腾讯云防火墙通过 `services.firewall.TENCENT_FIREWALL_RULES` 维护多条规则。每条规则声明协议、端口、动作和短描述，脚本运行时会给云端规则描述加上 `TENCENT_FIREWALL_RULE_DESC_PREFIX` 前缀。只有带此前缀的现有规则会被脚本删除或替换。
+防火墙服务分开声明：
+
+- `tencent-firewall`：生成 `home-netops-tencent-firewall.service` 和 `home-netops-tencent-firewall.timer`。
+- `aliyun-firewall`：生成 `home-netops-aliyun-firewall.service` 和 `home-netops-aliyun-firewall.timer`。
+- `firewall`：旧配置兼容别名，默认等价于 `tencent-firewall`。
+
+同一个角色可以同时启用两套防火墙：
+
+```json
+"services": ["tencent-firewall", "aliyun-firewall", "easytier"]
+```
+
+腾讯云防火墙通过 `services.tencent-firewall.TENCENT_FIREWALL_RULES` 维护多条规则。每条规则声明协议、端口、动作和短描述，脚本运行时会给云端规则描述加上 `TENCENT_FIREWALL_RULE_DESC_PREFIX` 前缀。只有带此前缀的现有规则会被脚本删除或替换。
 
 规则默认使用当前公网 IPv4 作为 `CidrBlock`；如果需要维护非本机 IP，可以在规则中直接指定 `CidrBlock`，脚本会原样传给腾讯云，不自动追加 `/32`：
 
@@ -85,10 +98,9 @@ config/home-netops.json
 ]
 ```
 
-阿里云 SWAS 防火墙通过同一个 `firewall` 服务启用，设置 `FIREWALL_PROVIDER=aliyun` 后使用 `firewall/aliyun.sh`。规则写在 `ALIYUN_FIREWALL_RULES`，字段对应阿里云返回结果里的 `RuleProtocol`、`Port`、`SourceCidrIp`、`Policy` 和可选 `Remark`：
+阿里云 SWAS 防火墙通过 `services.aliyun-firewall.ALIYUN_FIREWALL_RULES` 维护。字段对应阿里云返回结果里的 `RuleProtocol`、`Port`、`SourceCidrIp`、`Policy` 和可选 `Remark`：
 
 ```json
-"FIREWALL_PROVIDER": "aliyun",
 "ALIYUN_FIREWALL_PROFILE": "firewall",
 "ALIYUN_INSTANCE_ID": "ac9d18b3710c4c58a725e4030b13e600",
 "ALIYUN_BIZ_REGION_ID": "us-west",

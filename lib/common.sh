@@ -32,7 +32,7 @@ json_role_exists() {
 
 validate_service_name() {
     case "$1" in
-        ddns|firewall|reverse-ssh|easytier|proxy-server|proxy-client)
+        ddns|firewall|tencent-firewall|aliyun-firewall|reverse-ssh|easytier|proxy-server|proxy-client)
             return 0
             ;;
         *)
@@ -52,6 +52,10 @@ has_item() {
     return 1
 }
 
+has_firewall_service() {
+    has_item firewall "$@" || has_item tencent-firewall "$@" || has_item aliyun-firewall "$@"
+}
+
 validate_services() {
     local service
 
@@ -59,7 +63,7 @@ validate_services() {
         validate_service_name "$service" || die "unknown service in config: $service"
     done
 
-    if has_item reverse-ssh "$@" && ! has_item firewall "$@"; then
+    if has_item reverse-ssh "$@" && ! has_firewall_service "$@"; then
         die "reverse-ssh requires firewall in the same role"
     fi
 

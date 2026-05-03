@@ -265,6 +265,56 @@ cat > "$test_config" <<CONF
       ],
       "SYSTEMCTL_BIN": "systemctl"
     },
+    "tencent-firewall": {
+      "TCCLI_BIN": "tccli",
+      "TENCENT_INSTANCE_ID": "ins-test",
+      "TENCENT_REGION": "ap-test",
+      "TENCENT_FIREWALL_RULE_DESC_PREFIX": "home-netops: ",
+      "TENCENT_FIREWALL_RULES": [
+        {
+          "Protocol": "TCP",
+          "Port": "22",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "test-rule-ssh"
+        },
+        {
+          "Protocol": "TCP",
+          "Port": "8080",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "test-rule-web"
+        },
+        {
+          "Protocol": "TCP",
+          "Port": "443",
+          "CidrBlock": "198.51.100.10",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "test-rule-office"
+        }
+      ],
+      "SYSTEMCTL_BIN": "systemctl"
+    },
+    "aliyun-firewall": {
+      "ALIYUN_BIN": "aliyun",
+      "ALIYUN_FIREWALL_PROFILE": "firewall",
+      "ALIYUN_INSTANCE_ID": "swas-test",
+      "ALIYUN_BIZ_REGION_ID": "us-west",
+      "ALIYUN_FIREWALL_RULES": [
+        {
+          "RuleProtocol": "TCP",
+          "Port": "22",
+          "Policy": "accept",
+          "Remark": "test-rule-ssh"
+        },
+        {
+          "RuleProtocol": "UDP",
+          "Port": "11010",
+          "SourceCidrIp": "198.51.100.10",
+          "Policy": "drop",
+          "Remark": "test-rule-easytier"
+        }
+      ],
+      "SYSTEMCTL_BIN": "systemctl"
+    },
     "reverse-ssh": {
       "AUTOSSH_BIN": "autossh",
       "CLOUD_HOST": "198.51.100.44",
@@ -319,33 +369,18 @@ cat > "$test_config" <<CONF
       }
     },
     "ali-firewall": {
-      "services": ["firewall", "easytier"],
+      "services": ["aliyun-firewall", "easytier"],
       "overrides": {
-        "firewall": {
-          "FIREWALL_PROVIDER": "aliyun",
-          "ALIYUN_BIN": "aliyun",
-          "ALIYUN_FIREWALL_PROFILE": "firewall",
-          "ALIYUN_INSTANCE_ID": "swas-test",
-          "ALIYUN_BIZ_REGION_ID": "us-west",
-          "ALIYUN_FIREWALL_RULES": [
-            {
-              "RuleProtocol": "TCP",
-              "Port": "22",
-              "Policy": "accept",
-              "Remark": "test-rule-ssh"
-            },
-            {
-              "RuleProtocol": "UDP",
-              "Port": "11010",
-              "SourceCidrIp": "198.51.100.10",
-              "Policy": "drop",
-              "Remark": "test-rule-easytier"
-            }
-          ],
-          "SYSTEMCTL_BIN": "systemctl"
-        },
         "easytier": {
           "EASYTIER_CONFIG": "config/easytier-ali.yaml"
+        }
+      }
+    },
+    "dual-firewall": {
+      "services": ["tencent-firewall", "aliyun-firewall", "easytier"],
+      "overrides": {
+        "easytier": {
+          "EASYTIER_CONFIG": "config/easytier-home.yaml"
         }
       }
     },
@@ -579,6 +614,28 @@ assert_grep "ExecStart=$ROOT/firewall/aliyun.sh" "$ali_firewall_root/systemd/hom
     "Aliyun firewall unit must run Aliyun firewall entrypoint"
 assert_grep 'Requires=home-netops-aliyun-firewall.service' "$ali_firewall_root/systemd/home-netops-easytier.service" \
     "Aliyun firewall EasyTier role must start after Aliyun firewall"
+
+dual_firewall_root="$TMP/dual-firewall-root"
+mkdir -p "$dual_firewall_root/systemd"
+SYSTEMD_DIR="$dual_firewall_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-dual-firewall.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$dual_firewall_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_ALLOW_NON_ROOT=1 \
+"$ROOT/install.sh" --role dual-firewall --config "$test_config" --app-home "$ROOT" --no-start
+assert_file "$dual_firewall_root/systemd/home-netops-tencent-firewall.service"
+assert_file "$dual_firewall_root/systemd/home-netops-tencent-firewall.timer"
+assert_file "$dual_firewall_root/systemd/home-netops-aliyun-firewall.service"
+assert_file "$dual_firewall_root/systemd/home-netops-aliyun-firewall.timer"
+assert_grep "ExecStart=$ROOT/firewall/tencent.sh" "$dual_firewall_root/systemd/home-netops-tencent-firewall.service" \
+    "Dual firewall role must install Tencent firewall entrypoint"
+assert_grep "ExecStart=$ROOT/firewall/aliyun.sh" "$dual_firewall_root/systemd/home-netops-aliyun-firewall.service" \
+    "Dual firewall role must install Aliyun firewall entrypoint"
+assert_grep 'Requires=home-netops-tencent-firewall.service home-netops-aliyun-firewall.service' "$dual_firewall_root/systemd/home-netops-easytier.service" \
+    "Dual firewall EasyTier role must require both firewall services"
+assert_grep 'After=network-online.target home-netops-tencent-firewall.service home-netops-aliyun-firewall.service' "$dual_firewall_root/systemd/home-netops-easytier.service" \
+    "Dual firewall EasyTier role must start after both firewall services"
 
 client_root="$TMP/client-root"
 client_bashrc="$TMP/client-home/.bashrc"

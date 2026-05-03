@@ -14,7 +14,7 @@
       "ALIYUN_LINE": "default",
       "ALIYUN_TTL": "600"
     },
-    "firewall": {
+    "tencent-firewall": {
       "TCCLI_BIN": ".venv/bin/tccli",
       "TENCENT_INSTANCE_ID": "lhins-33uux3hm",
       "TENCENT_REGION": "ap-beijing",
@@ -99,7 +99,7 @@
   },
   "roles": {
     "home": {
-      "services": ["ddns", "firewall", "easytier", "proxy-client"],
+      "services": ["ddns", "tencent-firewall", "easytier", "proxy-client"],
       "overrides": {
         "easytier": {
           "EASYTIER_CONFIG": "config/easytier-home.local.yaml"
