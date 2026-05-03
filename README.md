@@ -126,6 +126,10 @@ sudo journalctl -u home-netops-easytier.service -f
 启用 `proxy-client` 的角色会启动本机 HTTP 转发：
 
 ```bash
+# 只允许指定的网址走代理
+gost -C ./config/gost.yaml
+
+# 全部走代理
 gost -L http://127.0.0.1:8080 -F socks5://10.144.144.3:1080
 ```
 

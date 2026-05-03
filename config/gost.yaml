@@ -26,11 +26,38 @@ bypasses:
   - name: proxy-whitelist
     whitelist: true
     matchers:
-      - "*.github.com"
-      - "github.com"
-      - "*.google.com.hk"
-      - "google.com.hk"
-      - "*.openai.com"
-      - "openai.com"
-      - "*.chatgpt.com"
-      - "chatgpt.com"
+      # GitHub
+      - ".github.com"
+      - ".githubusercontent.com"
+      - ".githubassets.com"
+
+      # Google
+      - ".google.com"
+      - ".google.com.hk"
+      - ".gstatic.com"
+      - ".googleapis.com"
+      - ".googleusercontent.com"
+      - ".ggpht.com"
+      - ".youtube.com"
+      - ".ytimg.com"
+      - ".googlevideo.com"
+
+      # OpenAI / ChatGPT core
+      - ".openai.com"
+      - ".chatgpt.com"
+      - ".oaistatic.com"
+      - ".oaiusercontent.com"
+
+      # OpenAI / ChatGPT supporting services
+      - "ws.chatgpt.com"
+      - "challenges.cloudflare.com"
+      - ".statsig.com"
+      - ".statsigapi.net"
+      - ".featuregates.org"
+      - ".featureassets.org"
+      - ".workos.com"
+      - ".workoscdn.com"
+      - "cdn.openaimerge.com"
+      - ".intercom.io"
+      - ".intercomcdn.com"
+      - "js.stripe.com"
