@@ -62,6 +62,20 @@ config/home-netops.json
 - `services.<service>`：某个服务的默认变量。
 - `roles.<role>.overrides.<service>`：某个角色对某个服务的覆盖值。
 
+腾讯云防火墙通过 `services.firewall.TENCENT_FIREWALL_RULES` 维护多条规则。每条规则声明协议、端口、动作和短描述，脚本运行时会把当前公网 IPv4 填入 `CidrBlock`，并给云端规则描述加上 `TENCENT_FIREWALL_RULE_DESC_PREFIX` 前缀。只有带此前缀的现有规则会被脚本删除或替换：
+
+```json
+"TENCENT_FIREWALL_RULE_DESC_PREFIX": "home-netops: ",
+"TENCENT_FIREWALL_RULES": [
+  {
+    "Protocol": "TCP",
+    "Port": "22",
+    "Action": "ACCEPT",
+    "FirewallRuleDescription": "auto-wsl-home-ssh"
+  }
+]
+```
+
 EasyTier 运行时配置使用被 Git 忽略的本地文件，例如：
 
 ```bash

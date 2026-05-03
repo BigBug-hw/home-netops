@@ -18,10 +18,39 @@
       "TCCLI_BIN": ".venv/bin/tccli",
       "TENCENT_INSTANCE_ID": "lhins-33uux3hm",
       "TENCENT_REGION": "ap-beijing",
-      "TENCENT_FIREWALL_PROTOCOL": "TCP",
-      "TENCENT_FIREWALL_PORT": "22",
-      "TENCENT_FIREWALL_ACTION": "ACCEPT",
-      "TENCENT_FIREWALL_RULE_DESC": "auto-wsl-home-ssh",
+      "TENCENT_FIREWALL_RULE_DESC_PREFIX": "home-netops: ",
+      "TENCENT_FIREWALL_RULES": [
+        {
+          "Protocol": "TCP",
+          "Port": "22",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "auto-wsl-home-ssh"
+        },
+        {
+          "Protocol": "TCP",
+          "Port": "11010-11012",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "easytier-home"
+        },
+        {
+          "Protocol": "UDP",
+          "Port": "11010",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "easytier-home"
+        },
+        {
+          "Protocol": "TCP",
+          "Port": "21114-21119",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "RustDesk"
+        },
+        {
+          "Protocol": "UDP",
+          "Port": "21116",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "RustDesk"
+        }
+      ],
       "RESTART_REVERSE_AFTER_FIREWALL_CHANGE": "1",
       "SYSTEMCTL_BIN": "systemctl"
     },

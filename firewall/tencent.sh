@@ -10,16 +10,14 @@ load_config
 
 TENCENT_INSTANCE_ID="${TENCENT_INSTANCE_ID:-lhins-33uux3hm}"
 TENCENT_REGION="${TENCENT_REGION:-ap-beijing}"
-TENCENT_FIREWALL_PROTOCOL="${TENCENT_FIREWALL_PROTOCOL:-TCP}"
-TENCENT_FIREWALL_PORT="${TENCENT_FIREWALL_PORT:-22}"
-TENCENT_FIREWALL_ACTION="${TENCENT_FIREWALL_ACTION:-ACCEPT}"
-TENCENT_FIREWALL_RULE_DESC="${TENCENT_FIREWALL_RULE_DESC:-auto-wsl-home-ssh}"
 TCCLI_BIN="${TCCLI_BIN:-${HOME_NETOPS_APP_HOME:-$ROOT_DIR}/.venv/bin/tccli}"
 TCCLI_BIN="$(resolve_command_path "$TCCLI_BIN")"
 GET_IP_SCRIPT="${GET_IP_SCRIPT:-$ROOT_DIR/lib/get-public-ip.sh}"
 GET_IP_SCRIPT="$(resolve_app_path "$GET_IP_SCRIPT")"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 RESTART_REVERSE_AFTER_FIREWALL_CHANGE="${RESTART_REVERSE_AFTER_FIREWALL_CHANGE:-1}"
+TENCENT_FIREWALL_RULES="${TENCENT_FIREWALL_RULES:-}"
+TENCENT_FIREWALL_RULE_DESC_PREFIX="${TENCENT_FIREWALL_RULE_DESC_PREFIX:-home-netops: }"
 
 ensure_tccli() {
     if [[ -x "$TCCLI_BIN" ]]; then
@@ -43,27 +41,15 @@ describe_rules() {
 }
 
 build_rule_json() {
-    local cidr="$1"
+    local rule="$1"
 
-    jq -nc \
-        --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
-        --arg port "$TENCENT_FIREWALL_PORT" \
-        --arg cidr "$cidr" \
-        --arg action "$TENCENT_FIREWALL_ACTION" \
-        --arg desc "$TENCENT_FIREWALL_RULE_DESC" \
-        '[{
-          Protocol: $proto,
-          Port: $port,
-          CidrBlock: $cidr,
-          Action: $action,
-          FirewallRuleDescription: $desc
-        }]'
+    jq -nc --argjson rule "$rule" '[$rule]'
 }
 
 create_rule() {
-    local cidr="$1"
+    local rule="$1"
     local rule_json
-    rule_json="$(build_rule_json "$cidr")"
+    rule_json="$(build_rule_json "$rule")"
 
     "$TCCLI_BIN" lighthouse CreateFirewallRules \
         --region "$TENCENT_REGION" \
@@ -106,40 +92,83 @@ restart_reverse_ssh_if_needed() {
     fi
 }
 
+target_rules_json() {
+    local cidr="$1"
+
+    [[ -n "$TENCENT_FIREWALL_RULES" ]] || die "TENCENT_FIREWALL_RULES must be set"
+
+    [[ -n "$TENCENT_FIREWALL_RULE_DESC_PREFIX" ]] || die "TENCENT_FIREWALL_RULE_DESC_PREFIX must not be empty"
+
+    jq -ec --arg cidr "$cidr" --arg desc_prefix "$TENCENT_FIREWALL_RULE_DESC_PREFIX" '
+        def non_empty_string($key):
+            has($key) and (.[$key] | type == "string" and length > 0);
+        def valid_rule:
+            type == "object"
+            and non_empty_string("Protocol")
+            and has("Port")
+            and ((.Port | type) == "string" or (.Port | type) == "number")
+            and ((.Port | tostring) | length > 0)
+            and non_empty_string("Action")
+            and non_empty_string("FirewallRuleDescription");
+
+        if type != "array" or length == 0 then
+            error("TENCENT_FIREWALL_RULES must be a non-empty JSON array")
+        else
+            map(
+                if valid_rule and (.FirewallRuleDescription | startswith($desc_prefix) | not) then
+                    {
+                        Protocol,
+                        Port: (.Port | tostring),
+                        CidrBlock: $cidr,
+                        Action,
+                        FirewallRuleDescription: ($desc_prefix + .FirewallRuleDescription)
+                    }
+                else
+                    error("each Tencent firewall rule must include Protocol, Port, Action, and a non-prefixed FirewallRuleDescription")
+                end
+            ) as $rules
+            | if ($rules | length) != ($rules | unique_by([.Protocol, .Port, .CidrBlock, .Action, .FirewallRuleDescription]) | length) then
+                error("TENCENT_FIREWALL_RULES contains duplicate target rules")
+              else
+                $rules
+              end
+        end
+    ' <<< "$TENCENT_FIREWALL_RULES" || die "invalid TENCENT_FIREWALL_RULES"
+}
+
 main() {
     need_cmd jq
     ensure_tccli
     need_cmd "$TCCLI_BIN"
     [[ -x "$GET_IP_SCRIPT" ]] || die "GET_IP_SCRIPT not executable: $GET_IP_SCRIPT"
 
-    local current_ip cidr resp matched exact_count stale_count changed
+    local current_ip cidr resp target_rules stale_count missing_count changed
     changed=0
     current_ip="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')" || die "failed to get public IPv4"
     cidr="${current_ip}"
+    target_rules="$(target_rules_json "$cidr")"
 
-    log "syncing Tencent firewall rule desc=$TENCENT_FIREWALL_RULE_DESC cidr=$cidr"
+    log "syncing Tencent firewall rules count=$(jq 'length' <<< "$target_rules") cidr=$cidr"
 
     resp="$(describe_rules)" || die "failed to describe Tencent firewall rules"
-    matched="$(jq -c \
-        --arg desc "$TENCENT_FIREWALL_RULE_DESC" \
-        '.FirewallRuleSet[]? | select(.FirewallRuleDescription == $desc)' \
+
+    stale_count="$(jq \
+        --argjson target "$target_rules" \
+        --arg desc_prefix "$TENCENT_FIREWALL_RULE_DESC_PREFIX" \
+        '[
+            .FirewallRuleSet[]?
+            | select((.FirewallRuleDescription // "") | startswith($desc_prefix))
+            | select(. as $existing |
+                any($target[];
+                    .Protocol == $existing.Protocol
+                    and .Port == $existing.Port
+                    and .CidrBlock == $existing.CidrBlock
+                    and .Action == $existing.Action
+                    and .FirewallRuleDescription == $existing.FirewallRuleDescription
+                ) | not
+            )
+        ] | length' \
         <<< "$resp")"
-
-    exact_count="$(jq -s \
-        --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
-        --arg port "$TENCENT_FIREWALL_PORT" \
-        --arg cidr "$cidr" \
-        --arg action "$TENCENT_FIREWALL_ACTION" \
-        'map(select(.Protocol == $proto and .Port == $port and .CidrBlock == $cidr and .Action == $action)) | length' \
-        <<< "$matched")"
-
-    stale_count="$(jq -s \
-        --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
-        --arg port "$TENCENT_FIREWALL_PORT" \
-        --arg cidr "$cidr" \
-        --arg action "$TENCENT_FIREWALL_ACTION" \
-        'map(select(.Protocol == $proto and .Port == $port and .Action == $action and .CidrBlock != $cidr)) | length' \
-        <<< "$matched")"
 
     if (( stale_count > 0 )); then
         while IFS= read -r rule; do
@@ -148,25 +177,63 @@ main() {
             delete_rule_json "$rule"
             changed=1
         done < <(jq -c \
-            --arg proto "$TENCENT_FIREWALL_PROTOCOL" \
-            --arg port "$TENCENT_FIREWALL_PORT" \
-            --arg cidr "$cidr" \
-            --arg action "$TENCENT_FIREWALL_ACTION" \
-            'select(.Protocol == $proto and .Port == $port and .Action == $action and .CidrBlock != $cidr)' \
-            <<< "$matched")
+            --argjson target "$target_rules" \
+            --arg desc_prefix "$TENCENT_FIREWALL_RULE_DESC_PREFIX" \
+            '.FirewallRuleSet[]?
+             | select((.FirewallRuleDescription // "") | startswith($desc_prefix))
+             | select(. as $existing |
+                 any($target[];
+                     .Protocol == $existing.Protocol
+                     and .Port == $existing.Port
+                     and .CidrBlock == $existing.CidrBlock
+                     and .Action == $existing.Action
+                     and .FirewallRuleDescription == $existing.FirewallRuleDescription
+                 ) | not
+             )' \
+            <<< "$resp")
     fi
 
-    if (( exact_count > 0 )); then
-        log "firewall_changed=$changed"
-        log "no change: Tencent firewall already allows $cidr"
-        restart_reverse_ssh_if_needed "$changed"
-        exit 0
+    missing_count="$(jq -n \
+        --argjson target "$target_rules" \
+        --argjson resp "$resp" \
+        '[
+            $target[]
+            | select(. as $wanted |
+                any($resp.FirewallRuleSet[]?;
+                    .Protocol == $wanted.Protocol
+                    and .Port == $wanted.Port
+                    and .CidrBlock == $wanted.CidrBlock
+                    and .Action == $wanted.Action
+                    and .FirewallRuleDescription == $wanted.FirewallRuleDescription
+                ) | not
+            )
+        ] | length')"
+
+    if (( missing_count > 0 )); then
+        while IFS= read -r rule; do
+            [[ -n "$rule" ]] || continue
+            log "creating Tencent firewall rule: $(jq -c . <<< "$rule")"
+            create_rule "$rule"
+            changed=1
+        done < <(jq -nc \
+            --argjson target "$target_rules" \
+            --argjson resp "$resp" \
+            '$target[]
+             | select(. as $wanted |
+                 any($resp.FirewallRuleSet[]?;
+                     .Protocol == $wanted.Protocol
+                     and .Port == $wanted.Port
+                     and .CidrBlock == $wanted.CidrBlock
+                     and .Action == $wanted.Action
+                     and .FirewallRuleDescription == $wanted.FirewallRuleDescription
+                 ) | not
+             )')
     fi
 
-    log "creating Tencent firewall rule for $cidr"
-    create_rule "$cidr"
-    changed=1
     log "firewall_changed=$changed"
+    if [[ "$changed" == "0" ]]; then
+        log "no change: Tencent firewall already matches target rules"
+    fi
     restart_reverse_ssh_if_needed "$changed"
     log "Tencent firewall update success"
 }
