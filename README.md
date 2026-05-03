@@ -85,6 +85,33 @@ config/home-netops.json
 ]
 ```
 
+阿里云 SWAS 防火墙通过同一个 `firewall` 服务启用，设置 `FIREWALL_PROVIDER=aliyun` 后使用 `firewall/aliyun.sh`。规则写在 `ALIYUN_FIREWALL_RULES`，字段对应阿里云返回结果里的 `RuleProtocol`、`Port`、`SourceCidrIp`、`Policy` 和可选 `Remark`：
+
+```json
+"FIREWALL_PROVIDER": "aliyun",
+"ALIYUN_FIREWALL_PROFILE": "firewall",
+"ALIYUN_INSTANCE_ID": "ac9d18b3710c4c58a725e4030b13e600",
+"ALIYUN_BIZ_REGION_ID": "us-west",
+"ALIYUN_FIREWALL_RULE_REMARK_PREFIX": "home-netops: ",
+"ALIYUN_FIREWALL_RULES": [
+  {
+    "RuleProtocol": "TCP",
+    "Port": "22",
+    "Policy": "accept",
+    "Remark": "ssh"
+  },
+  {
+    "RuleProtocol": "UDP",
+    "Port": "11010",
+    "SourceCidrIp": "198.51.100.10",
+    "Policy": "drop",
+    "Remark": "easytier"
+  }
+]
+```
+
+未写 `SourceCidrIp` 时默认使用当前公网 IPv4。阿里云创建规则时不能直接指定 CIDR，脚本会先创建规则，再重新查询新 `RuleId`，随后调用 `modify-firewall-rule` 写入 CIDR，并按 `Policy` 调用 enable/disable。删除只会作用于带 `ALIYUN_FIREWALL_RULE_REMARK_PREFIX` 前缀的已有规则，避免误删手工规则。
+
 EasyTier 运行时配置使用被 Git 忽略的本地文件，例如：
 
 ```bash

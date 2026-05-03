@@ -108,6 +108,7 @@ scripts=(
     lib/proxy-server.sh
     lib/reverse-ssh.sh
     ddns/aliyun.sh
+    firewall/aliyun.sh
     firewall/tencent.sh
     install.sh
     uninstall.sh
@@ -119,13 +120,39 @@ for script in "${scripts[@]}"; do
     bash -n "$APP_HOME/$script"
 done
 
+firewall_provider() {
+    printf '%s\n' "${FIREWALL_PROVIDER:-tencent}"
+}
+
+firewall_service_unit() {
+    printf 'home-netops-%s-firewall.service\n' "$(firewall_provider)"
+}
+
+firewall_timer_unit() {
+    printf 'home-netops-%s-firewall.timer\n' "$(firewall_provider)"
+}
+
+firewall_script() {
+    case "$(firewall_provider)" in
+        aliyun)
+            printf '%s\n' "$APP_HOME/firewall/aliyun.sh"
+            ;;
+        tencent)
+            printf '%s\n' "$APP_HOME/firewall/tencent.sh"
+            ;;
+        *)
+            die "unsupported FIREWALL_PROVIDER: $(firewall_provider)"
+            ;;
+    esac
+}
+
 unit_for_service() {
     case "$1" in
         ddns)
             printf '%s\n' home-netops-aliyun-ddns.service home-netops-aliyun-ddns.timer
             ;;
         firewall)
-            printf '%s\n' home-netops-tencent-firewall.service home-netops-tencent-firewall.timer
+            printf '%s\n' "$(firewall_service_unit)" "$(firewall_timer_unit)"
             ;;
         reverse-ssh)
             printf '%s\n' home-netops-reverse-ssh.service
@@ -148,7 +175,7 @@ enable_unit_for_service() {
             printf '%s\n' home-netops-aliyun-ddns.timer
             ;;
         firewall)
-            printf '%s\n' home-netops-tencent-firewall.timer
+            printf '%s\n' "$(firewall_timer_unit)"
             ;;
         reverse-ssh)
             printf '%s\n' home-netops-reverse-ssh.service
@@ -238,14 +265,14 @@ write_units_for_service() {
             ;;
         firewall)
             write_service_unit \
-                home-netops-tencent-firewall.service \
-                "home-netops Tencent firewall update" \
-                "$APP_HOME/firewall/tencent.sh" \
+                "$(firewall_service_unit)" \
+                "home-netops $(firewall_provider) firewall update" \
+                "$(firewall_script)" \
                 oneshot
             write_timer_unit \
-                home-netops-tencent-firewall.timer \
-                "Run home-netops Tencent firewall update periodically" \
-                home-netops-tencent-firewall.service
+                "$(firewall_timer_unit)" \
+                "Run home-netops $(firewall_provider) firewall update periodically" \
+                "$(firewall_service_unit)"
             ;;
         reverse-ssh)
             write_service_unit \
@@ -253,8 +280,8 @@ write_units_for_service() {
                 "home-netops reverse SSH tunnel" \
                 "$APP_HOME/lib/reverse-ssh.sh" \
                 simple \
-                home-netops-tencent-firewall.service \
-                home-netops-tencent-firewall.service
+                "$(firewall_service_unit)" \
+                "$(firewall_service_unit)"
             ;;
         easytier)
             if has_item firewall "${HOME_NETOPS_SERVICES[@]}"; then
@@ -263,8 +290,8 @@ write_units_for_service() {
                     "home-netops EasyTier node" \
                     "$APP_HOME/lib/easytier.sh" \
                     simple \
-                    home-netops-tencent-firewall.service \
-                    home-netops-tencent-firewall.service
+                    "$(firewall_service_unit)" \
+                    "$(firewall_service_unit)"
             else
                 write_service_unit \
                     home-netops-easytier.service \

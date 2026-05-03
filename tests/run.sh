@@ -31,6 +31,7 @@ assert_not_grep() {
 scripts=(
     check.sh
     ddns/aliyun.sh
+    firewall/aliyun.sh
     firewall/tencent.sh
     install.sh
     lib/common.sh
@@ -85,7 +86,85 @@ chmod +x "$mockbin/easytier-core"
 cat > "$mockbin/aliyun" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$ALIYUN_LOG"
+arg_value() {
+    local key="$1"
+    shift
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "$key" ]]; then
+            printf '%s\n' "$2"
+            return
+        fi
+        shift
+    done
+}
+
+print_firewall_rules() {
+    local first=1
+    printf '{"FirewallRules":['
+    if [[ -n "${ALIYUN_STATE:-}" && -f "$ALIYUN_STATE" ]]; then
+        while IFS='|' read -r id protocol port cidr policy remark; do
+            [[ -n "$id" ]] || continue
+            [[ "$first" == "1" ]] || printf ','
+            first=0
+            printf '{"Policy":"%s","Port":"%s","Remark":"%s","RuleId":"%s","RuleProtocol":"%s","SourceCidrIp":"%s"}' \
+                "$policy" "$port" "$remark" "$id" "$protocol" "$cidr"
+        done < "$ALIYUN_STATE"
+    fi
+    printf '],"PageNumber":1,"PageSize":10,"RequestId":"ok","TotalCount":0}\n'
+}
+
 case "$*" in
+    *list-firewall-rules*)
+        print_firewall_rules
+        ;;
+    *create-firewall-rule*)
+        id="rule-$(date +%s%N)"
+        protocol="$(arg_value --rule-protocol "$@")"
+        port="$(arg_value --port "$@")"
+        printf '%s|%s|%s|0.0.0.0/0|accept|\n' "$id" "$protocol" "$port" >> "${ALIYUN_STATE:?ALIYUN_STATE must be set}"
+        printf '{"RuleId":"%s","RequestId":"ok"}\n' "$id"
+        ;;
+    *modify-firewall-rule*)
+        tmp="${ALIYUN_STATE:?ALIYUN_STATE must be set}.tmp"
+        rule_id="$(arg_value --rule-id "$@")"
+        protocol="$(arg_value --rule-protocol "$@")"
+        port="$(arg_value --port "$@")"
+        cidr="$(arg_value --source-cidr-ip "$@")"
+        while IFS='|' read -r id old_protocol old_port old_cidr policy remark; do
+            if [[ "$id" == "$rule_id" ]]; then
+                printf '%s|%s|%s|%s|%s|%s\n' "$id" "$protocol" "$port" "$cidr" "$policy" "$remark"
+            else
+                printf '%s|%s|%s|%s|%s|%s\n' "$id" "$old_protocol" "$old_port" "$old_cidr" "$policy" "$remark"
+            fi
+        done < "$ALIYUN_STATE" > "$tmp"
+        mv "$tmp" "$ALIYUN_STATE"
+        printf '{"RequestId":"ok"}\n'
+        ;;
+    *enable-firewall-rule*|*disable-firewall-rule*)
+        tmp="${ALIYUN_STATE:?ALIYUN_STATE must be set}.tmp"
+        rule_id="$(arg_value --rule-id "$@")"
+        policy=accept
+        [[ "$*" == *disable-firewall-rule* ]] && policy=drop
+        while IFS='|' read -r id protocol port cidr old_policy remark; do
+            if [[ "$id" == "$rule_id" ]]; then
+                printf '%s|%s|%s|%s|%s|%s\n' "$id" "$protocol" "$port" "$cidr" "$policy" "$remark"
+            else
+                printf '%s|%s|%s|%s|%s|%s\n' "$id" "$protocol" "$port" "$cidr" "$old_policy" "$remark"
+            fi
+        done < "$ALIYUN_STATE" > "$tmp"
+        mv "$tmp" "$ALIYUN_STATE"
+        printf '{"RequestId":"ok"}\n'
+        ;;
+    *delete-firewall-rule*)
+        tmp="${ALIYUN_STATE:?ALIYUN_STATE must be set}.tmp"
+        rule_id="$(arg_value --rule-id "$@")"
+        while IFS='|' read -r id protocol port cidr policy remark; do
+            [[ "$id" == "$rule_id" ]] && continue
+            printf '%s|%s|%s|%s|%s|%s\n' "$id" "$protocol" "$port" "$cidr" "$policy" "$remark"
+        done < "$ALIYUN_STATE" > "$tmp"
+        mv "$tmp" "$ALIYUN_STATE"
+        printf '{"RequestId":"ok"}\n'
+        ;;
     *DescribeSubDomainRecords*)
         printf '{"TotalCount":1,"DomainRecords":{"Record":[{"RR":"home","Type":"A","Line":"default","RecordId":"rid","Value":"203.0.113.1"}]}}\n'
         ;;
@@ -236,6 +315,37 @@ cat > "$test_config" <<CONF
       "overrides": {
         "easytier": {
           "EASYTIER_CONFIG": "config/easytier-tencent.yaml"
+        }
+      }
+    },
+    "ali-firewall": {
+      "services": ["firewall", "easytier"],
+      "overrides": {
+        "firewall": {
+          "FIREWALL_PROVIDER": "aliyun",
+          "ALIYUN_BIN": "aliyun",
+          "ALIYUN_FIREWALL_PROFILE": "firewall",
+          "ALIYUN_INSTANCE_ID": "swas-test",
+          "ALIYUN_BIZ_REGION_ID": "us-west",
+          "ALIYUN_FIREWALL_RULES": [
+            {
+              "RuleProtocol": "TCP",
+              "Port": "22",
+              "Policy": "accept",
+              "Remark": "test-rule-ssh"
+            },
+            {
+              "RuleProtocol": "UDP",
+              "Port": "11010",
+              "SourceCidrIp": "198.51.100.10",
+              "Policy": "drop",
+              "Remark": "test-rule-easytier"
+            }
+          ],
+          "SYSTEMCTL_BIN": "systemctl"
+        },
+        "easytier": {
+          "EASYTIER_CONFIG": "config/easytier-ali.yaml"
         }
       }
     },
@@ -453,6 +563,23 @@ assert_file "$tencent_root/systemd/home-netops-easytier.service"
 assert_not_file "$tencent_root/systemd/home-netops-proxy-server.service"
 assert_not_file "$tencent_root/systemd/home-netops-tencent-firewall.service"
 
+ali_firewall_root="$TMP/ali-firewall-root"
+mkdir -p "$ali_firewall_root/systemd"
+SYSTEMD_DIR="$ali_firewall_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-ali-firewall.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$ali_firewall_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_ALLOW_NON_ROOT=1 \
+"$ROOT/install.sh" --role ali-firewall --config "$test_config" --app-home "$ROOT" --no-start
+assert_file "$ali_firewall_root/systemd/home-netops-aliyun-firewall.service"
+assert_file "$ali_firewall_root/systemd/home-netops-aliyun-firewall.timer"
+assert_not_file "$ali_firewall_root/systemd/home-netops-tencent-firewall.service"
+assert_grep "ExecStart=$ROOT/firewall/aliyun.sh" "$ali_firewall_root/systemd/home-netops-aliyun-firewall.service" \
+    "Aliyun firewall unit must run Aliyun firewall entrypoint"
+assert_grep 'Requires=home-netops-aliyun-firewall.service' "$ali_firewall_root/systemd/home-netops-easytier.service" \
+    "Aliyun firewall EasyTier role must start after Aliyun firewall"
+
 client_root="$TMP/client-root"
 client_bashrc="$TMP/client-home/.bashrc"
 mkdir -p "$client_root/systemd" "$(dirname "$client_bashrc")"
@@ -658,6 +785,28 @@ assert_not_grep 'DeleteFirewallRules.*"FirewallRuleDescription":"test-rule-offic
     "Tencent stale-rule sync must not delete unprefixed manual static rules"
 assert_not_grep 'manual-rule.*DeleteFirewallRules\|DeleteFirewallRules.*manual-rule' "$TMP/tccli-stale.log" \
     "Tencent stale-rule sync must not delete unmanaged descriptions"
+
+touch "$TMP/aliyun-fw.state"
+ALIYUN_LOG="$TMP/aliyun-firewall.log" \
+ALIYUN_STATE="$TMP/aliyun-fw.state" \
+SYSTEMCTL_LOG="$TMP/systemctl-aliyun-firewall.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_CONFIG="$test_config" \
+HOME_NETOPS_ROLE="ali-firewall" \
+HOME_NETOPS_APP_HOME="$ROOT" \
+GET_IP_SCRIPT="$mock_get_ip" \
+"$ROOT/firewall/aliyun.sh"
+assert_grep 'list-firewall-rules' "$TMP/aliyun-firewall.log" "Aliyun firewall script must list existing rules"
+aliyun_create_count="$(grep -c 'create-firewall-rule' "$TMP/aliyun-firewall.log")"
+[[ "$aliyun_create_count" == "2" ]] || fail "Aliyun firewall script must create missing target rules"
+aliyun_modify_count="$(grep -c 'modify-firewall-rule' "$TMP/aliyun-firewall.log")"
+[[ "$aliyun_modify_count" == "2" ]] || fail "Aliyun firewall script must modify created rules to set CIDR"
+assert_grep '203.0.113.7' "$TMP/aliyun-firewall.log" "Aliyun firewall script must use current public IP"
+assert_grep '198.51.100.10' "$TMP/aliyun-firewall.log" "Aliyun firewall script must use configured static CIDR"
+assert_grep 'enable-firewall-rule' "$TMP/aliyun-firewall.log" "Aliyun firewall script must enable accept rules by RuleId"
+assert_grep 'disable-firewall-rule' "$TMP/aliyun-firewall.log" "Aliyun firewall script must disable drop rules by RuleId"
+assert_grep 'try-restart home-netops-reverse-ssh.service' "$TMP/systemctl-aliyun-firewall.log" \
+    "Aliyun firewall script must restart reverse SSH when firewall changes"
 
 ALIYUN_LOG="$TMP/aliyun.log" \
 CURL_LOG="$TMP/curl-ddns.log" \

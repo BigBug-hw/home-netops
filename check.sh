@@ -118,6 +118,14 @@ check_unit() {
     fi
 }
 
+firewall_provider() {
+    printf '%s\n' "${FIREWALL_PROVIDER:-tencent}"
+}
+
+firewall_timer_unit() {
+    printf 'home-netops-%s-firewall.timer\n' "$(firewall_provider)"
+}
+
 [[ -n "$ROLE" ]] || die "--role is required"
 [[ -n "$CONFIG" ]] || die "--config is required"
 APP_HOME="$(cd -- "$APP_HOME" && pwd)"
@@ -147,10 +155,22 @@ if has_item ddns "${HOME_NETOPS_SERVICES[@]}"; then
 fi
 
 if has_item firewall "${HOME_NETOPS_SERVICES[@]}"; then
-    TCCLI_BIN="$(resolve_command_path "${TCCLI_BIN:-${HOME_NETOPS_APP_HOME}/.venv/bin/tccli}")"
-    check_cmd "$TCCLI_BIN"
-    [[ -n "${TENCENT_INSTANCE_ID:-}" ]] || fail_check "TENCENT_INSTANCE_ID is empty"
-    [[ -n "${TENCENT_REGION:-}" ]] || fail_check "TENCENT_REGION is empty"
+    case "$(firewall_provider)" in
+        aliyun)
+            check_cmd "${ALIYUN_BIN:-aliyun}"
+            [[ -n "${ALIYUN_INSTANCE_ID:-}" ]] || fail_check "ALIYUN_INSTANCE_ID is empty"
+            [[ -n "${ALIYUN_BIZ_REGION_ID:-}" ]] || fail_check "ALIYUN_BIZ_REGION_ID is empty"
+            ;;
+        tencent)
+            TCCLI_BIN="$(resolve_command_path "${TCCLI_BIN:-${HOME_NETOPS_APP_HOME}/.venv/bin/tccli}")"
+            check_cmd "$TCCLI_BIN"
+            [[ -n "${TENCENT_INSTANCE_ID:-}" ]] || fail_check "TENCENT_INSTANCE_ID is empty"
+            [[ -n "${TENCENT_REGION:-}" ]] || fail_check "TENCENT_REGION is empty"
+            ;;
+        *)
+            fail_check "unsupported FIREWALL_PROVIDER: $(firewall_provider)"
+            ;;
+    esac
 fi
 
 if has_item reverse-ssh "${HOME_NETOPS_SERVICES[@]}"; then
@@ -197,7 +217,7 @@ for service in "${HOME_NETOPS_SERVICES[@]}"; do
             check_unit home-netops-aliyun-ddns.timer
             ;;
         firewall)
-            check_unit home-netops-tencent-firewall.timer
+            check_unit "$(firewall_timer_unit)"
             ;;
         reverse-ssh)
             check_unit home-netops-reverse-ssh.service
