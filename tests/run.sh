@@ -102,7 +102,7 @@ case "$*" in
     *DescribeFirewallRules*)
         case "${TCCLI_MODE:-}" in
             stale)
-                printf '{"FirewallRuleSet":[{"Protocol":"TCP","Port":"22","CidrBlock":"203.0.113.7","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: test-rule-ssh"},{"Protocol":"TCP","Port":"8080","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: test-rule-web"},{"Protocol":"TCP","Port":"443","CidrBlock":"203.0.113.7","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: obsolete-rule"},{"Protocol":"TCP","Port":"8080","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"test-rule-web"},{"Protocol":"TCP","Port":"443","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"manual-rule"}]}\n'
+                printf '{"FirewallRuleSet":[{"Protocol":"TCP","Port":"22","CidrBlock":"203.0.113.7","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: test-rule-ssh"},{"Protocol":"TCP","Port":"8080","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: test-rule-web"},{"Protocol":"TCP","Port":"443","CidrBlock":"198.51.100.9","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: test-rule-office"},{"Protocol":"TCP","Port":"8443","CidrBlock":"203.0.113.7","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"home-netops: obsolete-rule"},{"Protocol":"TCP","Port":"8080","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"test-rule-web"},{"Protocol":"TCP","Port":"443","CidrBlock":"198.51.100.9","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"test-rule-office"},{"Protocol":"TCP","Port":"8443","CidrBlock":"203.0.113.8/32","Ipv6CidrBlock":"","Action":"ACCEPT","FirewallRuleDescription":"manual-rule"}]}\n'
                 ;;
             *)
                 printf '{"FirewallRuleSet":[]}\n'
@@ -175,6 +175,13 @@ cat > "$test_config" <<CONF
           "Port": "8080",
           "Action": "ACCEPT",
           "FirewallRuleDescription": "test-rule-web"
+        },
+        {
+          "Protocol": "TCP",
+          "Port": "443",
+          "CidrBlock": "198.51.100.10",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "test-rule-office"
         }
       ],
       "SYSTEMCTL_BIN": "systemctl"
@@ -608,12 +615,15 @@ GET_IP_SCRIPT="$mock_get_ip" \
 assert_grep 'DescribeFirewallRules' "$TMP/tccli.log" "Tencent script must describe existing rules"
 assert_grep 'CreateFirewallRules' "$TMP/tccli.log" "Tencent script must create missing rule"
 create_count="$(grep -c 'CreateFirewallRules' "$TMP/tccli.log")"
-[[ "$create_count" == "2" ]] || fail "Tencent script must create all missing managed rules"
+[[ "$create_count" == "3" ]] || fail "Tencent script must create all missing managed rules"
 assert_grep '203.0.113.7' "$TMP/tccli.log" "Tencent script must use current public IP"
+assert_grep '198.51.100.10' "$TMP/tccli.log" "Tencent script must use configured static CIDR"
 assert_grep '"Port":"22"' "$TMP/tccli.log" "Tencent script must create SSH firewall rule"
 assert_grep '"Port":"8080"' "$TMP/tccli.log" "Tencent script must create web firewall rule"
+assert_grep '"Port":"443"' "$TMP/tccli.log" "Tencent script must create static firewall rule"
 assert_grep 'home-netops: test-rule-ssh' "$TMP/tccli.log" "Tencent script must add managed description prefix"
 assert_grep 'home-netops: test-rule-web' "$TMP/tccli.log" "Tencent script must add managed description prefix to each rule"
+assert_grep 'home-netops: test-rule-office' "$TMP/tccli.log" "Tencent script must add managed description prefix to static rules"
 if grep -q '203.0.113.7/32' "$TMP/tccli.log"; then
     fail "Tencent script must not append /32 to single IP rules"
 fi
@@ -631,17 +641,21 @@ GET_IP_SCRIPT="$mock_get_ip" \
 "$ROOT/firewall/tencent.sh"
 assert_grep 'DeleteFirewallRules' "$TMP/tccli-stale.log" "Tencent script must delete stale rules"
 delete_count="$(grep -c 'DeleteFirewallRules' "$TMP/tccli-stale.log")"
-[[ "$delete_count" == "2" ]] || fail "Tencent script must delete stale and obsolete managed rules"
+[[ "$delete_count" == "3" ]] || fail "Tencent script must delete stale and obsolete managed rules"
 if grep 'DeleteFirewallRules' "$TMP/tccli-stale.log" | grep -q 'Ipv6CidrBlock'; then
     fail "Tencent stale-rule delete must omit empty Ipv6CidrBlock"
 fi
 assert_grep 'CreateFirewallRules' "$TMP/tccli-stale.log" "Tencent script must create replacement rule after stale delete"
 stale_create_count="$(grep -c 'CreateFirewallRules' "$TMP/tccli-stale.log")"
-[[ "$stale_create_count" == "1" ]] || fail "Tencent stale-rule sync must create only missing managed rules"
+[[ "$stale_create_count" == "2" ]] || fail "Tencent stale-rule sync must create only missing managed rules"
 assert_grep '"Port":"8080"' "$TMP/tccli-stale.log" "Tencent stale-rule sync must replace stale web rule"
+assert_grep '"Port":"443"' "$TMP/tccli-stale.log" "Tencent stale-rule sync must replace stale static rule"
+assert_grep '198.51.100.10' "$TMP/tccli-stale.log" "Tencent stale-rule sync must create configured static CIDR"
 assert_grep 'home-netops: obsolete-rule' "$TMP/tccli-stale.log" "Tencent stale-rule sync must delete obsolete managed rule"
 assert_not_grep 'DeleteFirewallRules.*"FirewallRuleDescription":"test-rule-web"' "$TMP/tccli-stale.log" \
     "Tencent stale-rule sync must not delete unprefixed manual rules"
+assert_not_grep 'DeleteFirewallRules.*"FirewallRuleDescription":"test-rule-office"' "$TMP/tccli-stale.log" \
+    "Tencent stale-rule sync must not delete unprefixed manual static rules"
 assert_not_grep 'manual-rule.*DeleteFirewallRules\|DeleteFirewallRules.*manual-rule' "$TMP/tccli-stale.log" \
     "Tencent stale-rule sync must not delete unmanaged descriptions"
 

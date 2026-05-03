@@ -49,6 +49,20 @@
           "Port": "21116",
           "Action": "ACCEPT",
           "FirewallRuleDescription": "RustDesk"
+        },
+        {
+          "Protocol": "TCP",
+          "Port": "11010-11012",
+          "CidrBlock": "47.88.100.190",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "easytier-ali"
+        },
+        {
+          "Protocol": "UDP",
+          "Port": "11010",
+          "CidrBlock": "47.88.100.190",
+          "Action": "ACCEPT",
+          "FirewallRuleDescription": "easytier-ali"
         }
       ],
       "RESTART_REVERSE_AFTER_FIREWALL_CHANGE": "1",

@@ -109,7 +109,8 @@ target_rules_json() {
             and ((.Port | type) == "string" or (.Port | type) == "number")
             and ((.Port | tostring) | length > 0)
             and non_empty_string("Action")
-            and non_empty_string("FirewallRuleDescription");
+            and non_empty_string("FirewallRuleDescription")
+            and ((has("CidrBlock") | not) or (.CidrBlock | type == "string" and length > 0));
 
         if type != "array" or length == 0 then
             error("TENCENT_FIREWALL_RULES must be a non-empty JSON array")
@@ -119,12 +120,12 @@ target_rules_json() {
                     {
                         Protocol,
                         Port: (.Port | tostring),
-                        CidrBlock: $cidr,
+                        CidrBlock: (.CidrBlock // $cidr),
                         Action,
                         FirewallRuleDescription: ($desc_prefix + .FirewallRuleDescription)
                     }
                 else
-                    error("each Tencent firewall rule must include Protocol, Port, Action, and a non-prefixed FirewallRuleDescription")
+                    error("each Tencent firewall rule must include Protocol, Port, Action, a non-prefixed FirewallRuleDescription, and optional non-empty CidrBlock")
                 end
             ) as $rules
             | if ($rules | length) != ($rules | unique_by([.Protocol, .Port, .CidrBlock, .Action, .FirewallRuleDescription]) | length) then
