@@ -41,6 +41,7 @@ scripts=(
     lib/proxy-server.sh
     lib/reverse-ssh.sh
     tools/rotate-easytier-secrets.sh
+    tools/sync-ssh-trust.sh
     uninstall.sh
 )
 
@@ -227,6 +228,34 @@ chmod +x "$mockbin/tccli"
 cat > "$mockbin/ssh" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "ssh $*" >> "$SSH_LOG"
+target=""
+for arg in "$@"; do
+    case "$arg" in
+        *@*)
+            target="$arg"
+            ;;
+    esac
+done
+host="${target#*@}"
+case "$*" in
+    *"cat ~/.ssh/home-netops_ed25519.pub"*)
+        case "$host" in
+            home.example)
+                printf 'ssh-ed25519 MOCK_HOME home-netops:ssh-trust:home\n'
+                ;;
+            ali.example)
+                printf 'ssh-ed25519 MOCK_ALI home-netops:ssh-trust:ali\n'
+                ;;
+            tencent.example)
+                printf 'ssh-ed25519 MOCK_TENCENT home-netops:ssh-trust:tencent\n'
+                ;;
+            *)
+                printf 'ssh-ed25519 MOCK_UNKNOWN home-netops:ssh-trust:unknown\n'
+                ;;
+        esac
+        exit 0
+        ;;
+esac
 if [[ -n "${SSH_FAIL_RESTART_HOST:-}" ]] \
     && [[ "$*" == *"$SSH_FAIL_RESTART_HOST"* ]] \
     && [[ "$*" == *"sudo systemctl restart home-netops-easytier.service"* ]] \
@@ -479,6 +508,51 @@ cat > "$deploy_hosts" <<CONF
   }
 }
 CONF
+
+SSH_LOG="$TMP/ssh-trust-dry-run.log" \
+PATH="$mockbin:$PATH" \
+"$ROOT/tools/sync-ssh-trust.sh" --hosts "$deploy_hosts" >/tmp/home-netops-ssh-trust-dry-run.out
+assert_grep 'dry-run only' /tmp/home-netops-ssh-trust-dry-run.out \
+    "ssh trust dry-run must not apply remote changes"
+if [[ -e "$TMP/ssh-trust-dry-run.log" ]]; then
+    fail "ssh trust dry-run must not call ssh"
+fi
+
+SSH_LOG="$TMP/ssh-trust.log" \
+PATH="$mockbin:$PATH" \
+"$ROOT/tools/sync-ssh-trust.sh" --apply --hosts "$deploy_hosts" >/tmp/home-netops-ssh-trust.out
+assert_grep 'rm -f .*home-netops_ed25519' "$TMP/ssh-trust.log" \
+    "ssh trust apply must replace old managed keys without backup"
+assert_grep 'ssh-keygen -t ed25519' "$TMP/ssh-trust.log" \
+    "ssh trust apply must generate ed25519 keys remotely"
+assert_grep 'home-netops:ssh-trust:home' "$TMP/ssh-trust.log" \
+    "ssh trust apply must install home public key on every role"
+assert_grep 'home-netops:ssh-trust:ali' "$TMP/ssh-trust.log" \
+    "ssh trust apply must install ali public key on every role"
+assert_grep 'home-netops:ssh-trust:tencent' "$TMP/ssh-trust.log" \
+    "ssh trust apply must install tencent public key on every role"
+assert_grep '# home-netops ssh-trust authorized_keys start' "$TMP/ssh-trust.log" \
+    "ssh trust apply must replace a managed authorized_keys block"
+assert_not_grep "awk ''" "$TMP/ssh-trust.log" \
+    "ssh trust apply must quote remote awk programs as one shell argument"
+assert_grep 'Host home-netops-home' "$TMP/ssh-trust.log" \
+    "ssh trust apply must write role SSH aliases"
+assert_grep 'IdentityFile ~/.ssh/home-netops_ed25519' "$TMP/ssh-trust.log" \
+    "ssh trust apply must pin the managed identity in SSH aliases"
+if grep -q 'bak' "$TMP/ssh-trust.log"; then
+    fail "ssh trust apply must not back up old managed keys"
+fi
+
+SSH_LOG="$TMP/ssh-trust-subset.log" \
+PATH="$mockbin:$PATH" \
+"$ROOT/tools/sync-ssh-trust.sh" --apply --hosts "$deploy_hosts" --roles "home ali" >/tmp/home-netops-ssh-trust-subset.out
+assert_grep 'home-netops:ssh-trust:home' "$TMP/ssh-trust-subset.log" \
+    "ssh trust subset must include selected home role"
+assert_grep 'home-netops:ssh-trust:ali' "$TMP/ssh-trust-subset.log" \
+    "ssh trust subset must include selected ali role"
+assert_not_grep 'home-netops:ssh-trust:tencent' "$TMP/ssh-trust-subset.log" \
+    "ssh trust subset must exclude unselected roles"
+
 SSH_LOG="$TMP/ssh-rotate.log" \
 SCP_LOG="$TMP/scp-rotate.log" \
 PATH="$mockbin:$PATH" \

@@ -256,6 +256,34 @@ tools/rotate-easytier-secrets.sh --apply --hosts config/deploy-hosts.json
 
 注意：`deploy-hosts.json` 里的 `easytier_config` 应指向 `.local.yaml` 运行时文件。应用轮换时会按 `tencent -> ali -> home` 的顺序重启，失败会尝试恢复远端备份。
 
+## SSH role 互信
+
+复用同一个主机映射文件：
+
+```bash
+cp config/deploy-hosts.example.json config/deploy-hosts.json
+```
+
+先 dry-run 查看将要处理的 role 和远端账号：
+
+```bash
+tools/sync-ssh-trust.sh --hosts config/deploy-hosts.json
+```
+
+为 `home`、`ali`、`tencent` 在各自远端生成新的 Ed25519 key，并把三台的公钥加入彼此的 `authorized_keys`：
+
+```bash
+tools/sync-ssh-trust.sh --apply --hosts config/deploy-hosts.json
+```
+
+只处理部分 role：
+
+```bash
+tools/sync-ssh-trust.sh --apply --hosts config/deploy-hosts.json --roles "home ali"
+```
+
+脚本只替换 `home-netops ssh-trust` 托管区块和 `~/.ssh/home-netops_ed25519*`，不会删除手工维护的 `authorized_keys` 行。旧的 home-netops 托管 key 会被直接替换，不额外备份。
+
 ## 卸载
 
 移除 home-netops 生成的 systemd unit 和代理客户端 `.bashrc` 托管块：
