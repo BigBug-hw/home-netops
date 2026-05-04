@@ -167,6 +167,24 @@ sudo ./install.sh \
 ./check.sh --role home --config ./config/home-netops.json
 ```
 
+启动失败或依赖链不清楚时运行深度诊断。它会打印角色服务拓扑、unit 状态、最近 journal 摘要，并做只读 TCP 连通性探测：
+
+```bash
+./check.sh --role home --config ./config/home-netops.json --deep
+```
+
+只看某个服务：
+
+```bash
+./check.sh --role home --config ./config/home-netops.json --deep --service easytier
+```
+
+在离线环境或不想发起网络探测时：
+
+```bash
+./check.sh --role home --config ./config/home-netops.json --deep --no-network --logs 50
+```
+
 查看 systemd 状态和日志：
 
 ```bash

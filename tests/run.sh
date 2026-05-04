@@ -57,11 +57,35 @@ cat > "$mockbin/systemctl" <<'MOCK'
 printf '%s\n' "systemctl $*" >> "$SYSTEMCTL_LOG"
 case "$1" in
     is-enabled|is-active)
+        if [[ "$1" == "is-active" && -n "${SYSTEMCTL_INACTIVE_UNIT:-}" && "$2" == "$SYSTEMCTL_INACTIVE_UNIT" ]]; then
+            printf 'inactive\n'
+            exit 3
+        fi
         [[ -e "$SYSTEMD_DIR/$2" ]]
+        ;;
+    is-failed)
+        printf 'active\n'
+        exit 1
         ;;
 esac
 MOCK
 chmod +x "$mockbin/systemctl"
+cat > "$mockbin/journalctl" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "journalctl $*" >> "$JOURNALCTL_LOG"
+unit=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -u)
+            unit="$2"
+            shift
+            ;;
+    esac
+    shift
+done
+printf '%s\n' "mock journal for ${unit:-unknown}"
+MOCK
+chmod +x "$mockbin/journalctl"
 cat > "$mockbin/curl" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CURL_LOG"
@@ -756,6 +780,58 @@ HOME_NETOPS_SYSTEMCTL="systemctl" \
 "$ROOT/check.sh" --role ali --config "$test_config" --app-home "$ROOT" >/tmp/home-netops-check.out
 assert_grep 'home-netops check passed: role=ali services=easytier proxy-server' /tmp/home-netops-check.out \
     "check must pass for installed ali role"
+
+SYSTEMD_DIR="$ali_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-check-deep.log" \
+JOURNALCTL_LOG="$TMP/journalctl-check-deep.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$ali_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_JOURNALCTL="journalctl" \
+EASYTIER_CONFIG="$rotate_out/easytier-ali.yaml" \
+"$ROOT/check.sh" --role ali --config "$test_config" --app-home "$ROOT" --deep --no-network --logs 2 >/tmp/home-netops-check-deep.out
+assert_grep '== Topology ==' /tmp/home-netops-check-deep.out \
+    "deep check must group topology output"
+assert_grep '  - role: ali' /tmp/home-netops-check-deep.out \
+    "deep check must print role topology"
+assert_grep '  - proxy-server -> deps: easytier; units: home-netops-proxy-server.service' /tmp/home-netops-check-deep.out \
+    "deep check must print service dependencies"
+assert_grep '  - skip network probe proxy-server-socks 10.144.144.3:1080' /tmp/home-netops-check-deep.out \
+    "deep check --no-network must skip proxy-server network probe"
+if [[ -e "$TMP/journalctl-check-deep.log" ]]; then
+    fail "deep check must not read journal logs for healthy units"
+fi
+
+SYSTEMD_DIR="$ali_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-check-service.log" \
+JOURNALCTL_LOG="$TMP/journalctl-check-service.log" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$ali_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_JOURNALCTL="journalctl" \
+EASYTIER_CONFIG="$rotate_out/easytier-ali.yaml" \
+"$ROOT/check.sh" --role ali --config "$test_config" --app-home "$ROOT" --deep --service proxy-server --no-network >/tmp/home-netops-check-service.out
+assert_grep '== Service: proxy-server ==' /tmp/home-netops-check-service.out \
+    "service-filtered deep check must diagnose selected service"
+assert_not_grep '== Service: easytier ==' /tmp/home-netops-check-service.out \
+    "service-filtered deep check must not diagnose other services"
+if [[ -e "$TMP/journalctl-check-service.log" ]]; then
+    fail "service-filtered deep check must not read journal logs for healthy units"
+fi
+
+SYSTEMD_DIR="$ali_root/systemd" \
+SYSTEMCTL_LOG="$TMP/systemctl-check-service-bad.log" \
+JOURNALCTL_LOG="$TMP/journalctl-check-service-bad.log" \
+SYSTEMCTL_INACTIVE_UNIT="home-netops-proxy-server.service" \
+PATH="$mockbin:$PATH" \
+HOME_NETOPS_SYSTEMD_DIR="$ali_root/systemd" \
+HOME_NETOPS_SYSTEMCTL="systemctl" \
+HOME_NETOPS_JOURNALCTL="journalctl" \
+EASYTIER_CONFIG="$rotate_out/easytier-ali.yaml" \
+"$ROOT/check.sh" --role ali --config "$test_config" --app-home "$ROOT" --deep --service proxy-server --no-network >/tmp/home-netops-check-service-bad.out 2>&1 && \
+    fail "service-filtered deep check must fail when selected service is inactive"
+assert_grep 'journalctl -u home-netops-proxy-server.service -n 30 --no-pager' "$TMP/journalctl-check-service-bad.log" \
+    "service-filtered deep check must read selected service journal logs when unhealthy"
 
 SYSTEMD_DIR="$client_root/systemd" \
 SYSTEMCTL_LOG="$TMP/systemctl-check-client.log" \
