@@ -68,6 +68,27 @@
       "RESTART_REVERSE_AFTER_FIREWALL_CHANGE": "1",
       "SYSTEMCTL_BIN": "systemctl"
     },
+    "aliyun-firewall": {
+      "ALIYUN_FIREWALL_PROFILE": "firewall",
+      "ALIYUN_INSTANCE_ID": "ac9d18b3710c4c58a725e4030b13e600",
+      "ALIYUN_BIZ_REGION_ID": "us-west-1",
+      "ALIYUN_FIREWALL_RULE_REMARK_PREFIX": "home-netops: ",
+      "ALIYUN_FIREWALL_RULES": [
+        {
+          "RuleProtocol": "TCP",
+          "Port": "22",
+          "Policy": "accept",
+          "Remark": "wsl-home-ssh"
+        },
+        {
+          "RuleProtocol": "TCP",
+          "Port": "22",
+          "SourceCidrIp": "82.156.118.129",
+          "Policy": "accept",
+          "Remark": "tencent-ssh"
+        }
+      ]
+    },
     "reverse-ssh": {
       "AUTOSSH_BIN": "autossh",
       "CLOUD_HOST": "82.156.118.129",
@@ -99,7 +120,7 @@
   },
   "roles": {
     "home": {
-      "services": ["ddns", "tencent-firewall", "easytier", "proxy-client"],
+      "services": ["ddns", "aliyun-firewall", "tencent-firewall", "easytier", "proxy-client"],
       "overrides": {
         "easytier": {
           "EASYTIER_CONFIG": "config/easytier-home.local.yaml"

@@ -31,24 +31,42 @@ describe_rules() {
 
 create_rule() {
     local rule="$1"
+    local remark
+    remark="$(jq -r '.Remark' <<< "$rule")"
 
-    aliyun_cli swas-open create-firewall-rule \
-        --instance-id "$ALIYUN_INSTANCE_ID" \
-        --biz-region-id "$ALIYUN_BIZ_REGION_ID" \
-        --rule-protocol "$(jq -r '.RuleProtocol' <<< "$rule")" \
+    local args=(
+        swas-open create-firewall-rule
+        --instance-id "$ALIYUN_INSTANCE_ID"
+        --biz-region-id "$ALIYUN_BIZ_REGION_ID"
+        --rule-protocol "$(jq -r '.RuleProtocol' <<< "$rule")"
         --port "$(jq -r '.Port' <<< "$rule")"
+    )
+    if [[ -n "$remark" && "$remark" != "null" ]]; then
+        args+=(--remark "$remark")
+    fi
+
+    aliyun_cli "${args[@]}"
 }
 
-modify_rule_cidr() {
+modify_rule() {
     local rule_id="$1" rule="$2"
+    local remark
+    remark="$(jq -r '.Remark' <<< "$rule")"
 
-    aliyun_cli swas-open modify-firewall-rule \
-        --instance-id "$ALIYUN_INSTANCE_ID" \
-        --biz-region-id "$ALIYUN_BIZ_REGION_ID" \
-        --rule-id "$rule_id" \
-        --rule-protocol "$(jq -r '.RuleProtocol' <<< "$rule")" \
-        --port "$(jq -r '.Port' <<< "$rule")" \
+    local args=(
+        swas-open modify-firewall-rule
+        --instance-id "$ALIYUN_INSTANCE_ID"
+        --biz-region-id "$ALIYUN_BIZ_REGION_ID"
+        --rule-id "$rule_id"
+        --rule-protocol "$(jq -r '.RuleProtocol' <<< "$rule")"
+        --port "$(jq -r '.Port' <<< "$rule")"
         --source-cidr-ip "$(jq -r '.SourceCidrIp' <<< "$rule")"
+    )
+    if [[ -n "$remark" && "$remark" != "null" ]]; then
+        args+=(--remark "$remark")
+    fi
+
+    aliyun_cli "${args[@]}"
 }
 
 set_rule_policy() {
@@ -146,8 +164,6 @@ find_existing_rule_id() {
             $exact[0].RuleId
           elif ($same_remark | length) == 1 then
             $same_remark[0].RuleId
-          elif ($same_port | length) == 1 then
-            $same_port[0].RuleId
           else
             ""
           end
@@ -184,7 +200,7 @@ main() {
     [[ -n "$ALIYUN_INSTANCE_ID" ]] || die "ALIYUN_INSTANCE_ID must be set"
     [[ -n "$ALIYUN_BIZ_REGION_ID" ]] || die "ALIYUN_BIZ_REGION_ID must be set"
 
-    local current_ip target_rules resp changed stale_count rule rule_id after create_resp
+    local current_ip target_rules resp changed stale_count rule rule_id after before_resp create_resp
     changed=0
     current_ip="$("$GET_IP_SCRIPT" | tr -d '\r\n[:space:]')" || die "failed to get public IPv4"
     target_rules="$(target_rules_json "$current_ip")"
@@ -240,7 +256,7 @@ main() {
 
         if [[ -n "$rule_id" && "$rule_id" != "null" ]]; then
             log "updating Aliyun firewall rule: RuleId=$rule_id target=$(jq -c . <<< "$rule")"
-            modify_rule_cidr "$rule_id" "$rule"
+            modify_rule "$rule_id" "$rule"
             set_rule_policy "$rule_id" "$(jq -r '.Policy' <<< "$rule")"
             changed=1
             resp="$(describe_rules)" || die "failed to describe Aliyun firewall rules after updating rule"
@@ -248,12 +264,15 @@ main() {
         fi
 
         log "creating Aliyun firewall rule: $(jq -c . <<< "$rule")"
-        create_resp="$resp"
-        create_rule "$rule"
+        before_resp="$resp"
+        create_resp="$(create_rule "$rule")"
         after="$(describe_rules)" || die "failed to describe Aliyun firewall rules after creating rule"
-        rule_id="$(find_created_rule_id "$create_resp" "$after" "$rule")"
+        rule_id="$(jq -r '.RuleId // empty' <<< "$create_resp")"
+        if [[ -z "$rule_id" || "$rule_id" == "null" ]]; then
+            rule_id="$(find_created_rule_id "$before_resp" "$after" "$rule")"
+        fi
         [[ -n "$rule_id" && "$rule_id" != "null" ]] || die "failed to identify created Aliyun firewall rule for target: $(jq -c . <<< "$rule")"
-        modify_rule_cidr "$rule_id" "$rule"
+        modify_rule "$rule_id" "$rule"
         set_rule_policy "$rule_id" "$(jq -r '.Policy' <<< "$rule")"
         changed=1
         resp="$(describe_rules)" || die "failed to describe Aliyun firewall rules after creating target rule"

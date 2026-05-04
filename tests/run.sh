@@ -121,7 +121,8 @@ case "$*" in
         id="rule-$(date +%s%N)"
         protocol="$(arg_value --rule-protocol "$@")"
         port="$(arg_value --port "$@")"
-        printf '%s|%s|%s|0.0.0.0/0|accept|\n' "$id" "$protocol" "$port" >> "${ALIYUN_STATE:?ALIYUN_STATE must be set}"
+        remark="$(arg_value --remark "$@")"
+        printf '%s|%s|%s|0.0.0.0/0|accept|%s\n' "$id" "$protocol" "$port" "$remark" >> "${ALIYUN_STATE:?ALIYUN_STATE must be set}"
         printf '{"RuleId":"%s","RequestId":"ok"}\n' "$id"
         ;;
     *modify-firewall-rule*)
@@ -130,8 +131,10 @@ case "$*" in
         protocol="$(arg_value --rule-protocol "$@")"
         port="$(arg_value --port "$@")"
         cidr="$(arg_value --source-cidr-ip "$@")"
+        new_remark="$(arg_value --remark "$@")"
         while IFS='|' read -r id old_protocol old_port old_cidr policy remark; do
             if [[ "$id" == "$rule_id" ]]; then
+                [[ -n "$new_remark" ]] && remark="$new_remark"
                 printf '%s|%s|%s|%s|%s|%s\n' "$id" "$protocol" "$port" "$cidr" "$policy" "$remark"
             else
                 printf '%s|%s|%s|%s|%s|%s\n' "$id" "$old_protocol" "$old_port" "$old_cidr" "$policy" "$remark"
@@ -306,9 +309,16 @@ cat > "$test_config" <<CONF
           "Remark": "test-rule-ssh"
         },
         {
+          "RuleProtocol": "TCP",
+          "Port": "22",
+          "SourceCidrIp": "198.51.100.10",
+          "Policy": "accept",
+          "Remark": "test-rule-office-ssh"
+        },
+        {
           "RuleProtocol": "UDP",
           "Port": "11010",
-          "SourceCidrIp": "198.51.100.10",
+          "SourceCidrIp": "198.51.100.11",
           "Policy": "drop",
           "Remark": "test-rule-easytier"
         }
@@ -855,11 +865,18 @@ GET_IP_SCRIPT="$mock_get_ip" \
 "$ROOT/firewall/aliyun.sh"
 assert_grep 'list-firewall-rules' "$TMP/aliyun-firewall.log" "Aliyun firewall script must list existing rules"
 aliyun_create_count="$(grep -c 'create-firewall-rule' "$TMP/aliyun-firewall.log")"
-[[ "$aliyun_create_count" == "2" ]] || fail "Aliyun firewall script must create missing target rules"
+[[ "$aliyun_create_count" == "3" ]] || fail "Aliyun firewall script must create missing target rules"
 aliyun_modify_count="$(grep -c 'modify-firewall-rule' "$TMP/aliyun-firewall.log")"
-[[ "$aliyun_modify_count" == "2" ]] || fail "Aliyun firewall script must modify created rules to set CIDR"
+[[ "$aliyun_modify_count" == "3" ]] || fail "Aliyun firewall script must modify created rules to set CIDR and remark"
 assert_grep '203.0.113.7' "$TMP/aliyun-firewall.log" "Aliyun firewall script must use current public IP"
 assert_grep '198.51.100.10' "$TMP/aliyun-firewall.log" "Aliyun firewall script must use configured static CIDR"
+assert_grep '198.51.100.11' "$TMP/aliyun-firewall.log" "Aliyun firewall script must keep distinct static CIDRs"
+assert_grep '--remark home-netops: test-rule-ssh' "$TMP/aliyun-firewall.log" "Aliyun firewall script must set SSH rule remark"
+assert_grep '--remark home-netops: test-rule-office-ssh' "$TMP/aliyun-firewall.log" "Aliyun firewall script must set same-port static rule remark"
+assert_grep '--remark home-netops: test-rule-easytier' "$TMP/aliyun-firewall.log" "Aliyun firewall script must set EasyTier rule remark"
+aliyun_tcp22_count="$(awk -F'|' '$2 == "TCP" && $3 == "22" { count++ } END { print count + 0 }' "$TMP/aliyun-fw.state")"
+[[ "$aliyun_tcp22_count" == "2" ]] || fail "Aliyun firewall script must keep same protocol/port rules with different CIDRs"
+assert_grep 'home-netops: test-rule-office-ssh' "$TMP/aliyun-fw.state" "Aliyun firewall state must persist same-port static rule remark"
 assert_grep 'enable-firewall-rule' "$TMP/aliyun-firewall.log" "Aliyun firewall script must enable accept rules by RuleId"
 assert_grep 'disable-firewall-rule' "$TMP/aliyun-firewall.log" "Aliyun firewall script must disable drop rules by RuleId"
 assert_grep 'try-restart home-netops-reverse-ssh.service' "$TMP/systemctl-aliyun-firewall.log" \
