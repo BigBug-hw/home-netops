@@ -21,6 +21,13 @@ chains:
               type: socks5
             dialer:
               type: tcp
+      - name: direct-hop
+        bypass: proxy-bypass
+        nodes:
+          - name: direct-node
+            addr: ""
+            connector:
+              type: direct
 
 bypasses:
   - name: proxy-whitelist
@@ -34,6 +41,7 @@ bypasses:
       # Google
       - ".google.com"
       - ".google.com.hk"
+      - ".google.co.uk"
       - ".gstatic.com"
       - ".googleapis.com"
       - ".googleusercontent.com"
@@ -63,3 +71,14 @@ bypasses:
       - "js.stripe.com"
 
       - "rustdesk.com"
+
+  - name: proxy-bypass
+    whitelist: true
+    matchers:
+      # 国内直连域名
+      - ".qcloud.com"
+      - ".weixin.qq.com"
+      - ".wechat.com"
+      - ".tencent.com"
+      - ".tenpay.com"
+      - ".qq.com"
