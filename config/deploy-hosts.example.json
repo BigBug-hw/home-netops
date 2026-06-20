@@ -1,25 +1,32 @@
 {
   "roles": {
     "home": {
-      "ssh_host": "home.example.net",
+      "ssh_host": "home.bigbug.ren",
       "ssh_user": "root",
       "ssh_port": "22",
       "app_home": "/home/bigbug/software/home-netops",
       "easytier_config": "config/easytier-home.local.yaml"
     },
     "ali": {
-      "ssh_host": "ali.example.net",
+      "ssh_host": "ali.bigbug.ren",
       "ssh_user": "root",
       "ssh_port": "22",
       "app_home": "/home/bigbug/software/home-netops",
       "easytier_config": "config/easytier-ali.local.yaml"
     },
     "tencent": {
-      "ssh_host": "tencent.example.net",
+      "ssh_host": "tencent.bigbug.ren",
       "ssh_user": "root",
       "ssh_port": "22",
       "app_home": "/home/bigbug/software/home-netops",
       "easytier_config": "config/easytier-tencent.local.yaml"
+    },
+    "thinkpad": {
+      "ssh_host": "thinkpad.bigbug.ren",
+      "ssh_user": "root",
+      "ssh_port": "22",
+      "app_home": "/home/bigbug/software/home-netops",
+      "easytier_config": "config/easytier-thinkpad.local.yaml"
     }
   }
 }

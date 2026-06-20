@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 HOSTS_FILE="$ROOT/config/deploy-hosts.json"
 APPLY=0
-ROLES=(home ali tencent)
+ROLES=(home ali tencent thinkpad)
 KEY_NAME="home-netops_ed25519"
 MARKER="home-netops ssh-trust"
 

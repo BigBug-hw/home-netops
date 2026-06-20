@@ -6,8 +6,8 @@ HOSTS_FILE="$ROOT/config/deploy-hosts.json"
 CONFIG_DIR="$ROOT/config"
 OUTPUT_DIR=""
 APPLY=0
-ROLES=(home ali tencent)
-RESTART_ORDER=(tencent ali home)
+ROLES=(home ali tencent thinkpad)
+RESTART_ORDER=(tencent ali thinkpad home)
 
 usage() {
     cat <<USAGE

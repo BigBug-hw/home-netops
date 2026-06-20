@@ -1,10 +1,10 @@
 # vpn中的身份
-hostname = "tencent"
-instance_name = "tencent.net.bigbug.ren"
+hostname = "thinkpad"
+instance_name = "thinkpad.net.bigbug.ren"
 
 # 静态IP
 dhcp = false
-ipv4 = "10.144.144.1"
+ipv4 = "10.144.144.5"
 
 # 共享节点监听
 listeners = [
@@ -14,7 +14,7 @@ listeners = [
     "wss://0.0.0.0:11012",
 ]
 tcp_whitelist = []
-udp_whitelist = []                                                                                                                                                                                                                                                                
+udp_whitelist = []
 
 # 管理 RPC 监听地址；只本机管理更安全
 rpc_portal = "127.0.0.1:15888"
@@ -30,5 +30,9 @@ private_mode = true
 
 [secure_mode]
 enabled = true
-local_private_key = "REPLACE_WITH_ROTATED_TENCENT_PRIVATE_KEY"
-local_public_key = "REPLACE_WITH_ROTATED_TENCENT_PUBLIC_KEY"
+local_private_key = "REPLACE_WITH_ROTATED_THINKPAD_PRIVATE_KEY"
+local_public_key = "REPLACE_WITH_ROTATED_THINKPAD_PUBLIC_KEY"
+
+[[peer]]
+uri = "tcp://82.156.118.129:11010"
+peer_public_key = "REPLACE_WITH_ROTATED_TENCENT_PUBLIC_KEY"
